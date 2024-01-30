@@ -1,4 +1,4 @@
-.PHONY: help install clean docs blobs test ci mypy
+.PHONY: help install clean docs test ci mypy pyright pyupgrade isort black ruff release example-ci
 
 help: 
 	@echo "Please use \`make <target>' where <target> is one of"
@@ -6,8 +6,16 @@ help:
 	@echo "  clean      to clean the directory tree"
 	@echo "  docs       to generate the documentation"
 	@echo "  ci 	    to run the CI workflows"
-	@echo "  mypy       to run the type checker"
+	@echo "  mypy       to run the mypy static type checker"
+	@echo "  pyright    to run the pyright static type checker"
+	@echo "  pyupgrade  to run pyupgrade"
+	@echo "  isort      to run isort"
+	@echo "  black      to run black"
+	@echo "  ruff 	    to run ruff"
+	@echo "  stubs      to generate the stubs"
 	@echo "  test       to run the tests"
+	@echo "  release    to perform all actions required for a release"
+	@echo "  example-ci to run the CI workflows for the example scripts"
 
 install:
 	pip3 install .
@@ -16,23 +24,47 @@ clean:
 	rm -rf build
 	rm -rf dist
 	rm -rf *.egg-info
-	rm -rf PROJECT/*.egg-info
-	rm -rf src/PROJECT/*.egg-info
+	rm -rf shiftdetector/*.egg-info
+	rm -rf src/shiftdetector/*.egg-info
 	pyclean .
+	rm -rf .mypy_cache
+	rm -rf .ruff_cache
 
 docs:
+	python3 scripts/build_example_docs.py
 	rm -rf docs/source/*
-	sphinx-apidoc -o docs/source/ src/PROJECT/
+	sphinx-apidoc -o docs/source/ src/shiftdetector/
 	cd docs && make html
 
-ci: mypy
-	./scripts/ci/pyupgrade.sh
-	python3 -m ruff ./src//PROJECT --fix
-	python3 -m isort src/PROJECT
-	python3 -m black src/PROJECT --safe
+ci: pyupgrade ruff mypy isort black
 
 mypy:
-	./scripts/ci/mypy.sh
+	python3 -m mypy src/shiftdetector --config-file=pyproject.toml
+
+pyright:
+	python3 -m pyright --project=pyproject.toml
+
+pyupgrade:
+	-./scripts/ci/pyupgrade.sh
+
+isort:
+	python3 -m isort src/shiftdetector
+
+black:
+	python3 -m black src/shiftdetector --safe
+
+ruff:
+	python3 -m ruff ./src/shiftdetector --fix --preview
+
+stubs:
+	python3 scripts/make_stubs.py
 
 test:
 	./scripts/run_tests.sh
+
+example-ci: pyupgrade
+	python3 -m ruff ./examples --fix --preview --ignore=T201,INP001,F841
+	python3 -m isort examples
+	python3 -m black examples --safe
+
+release: clean ci test docs example-ci

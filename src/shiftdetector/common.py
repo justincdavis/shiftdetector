@@ -50,7 +50,12 @@ def clamp(n: float, minval: float, maxval: float) -> int | float:
         return maxval
     return n
 
-def bbox_iou(box1: tuple[int, int, int, int], box2: tuple[int, int, int, int], eps: float = 1e-7) -> float:
+
+def bbox_iou(
+    box1: tuple[int, int, int, int],
+    box2: tuple[int, int, int, int],
+    eps: float = 1e-7,
+) -> float:
     """
     Compute IoU between two bounding boxes of x1, y1, x2, y2 format.
 
@@ -67,7 +72,10 @@ def bbox_iou(box1: tuple[int, int, int, int], box2: tuple[int, int, int, int], e
     b2_x1, b2_y1, b2_x2, b2_y2 = box2[0], box2[1], box2[2], box2[3]
 
     # Intersection area
-    inter = max((min(b1_x2, b2_x2) - max(b1_x1, b2_x1)), 0) * max((min(b1_y2, b2_y2) - max(b1_y1, b2_y1)), 0)
+    inter = max((min(b1_x2, b2_x2) - max(b1_x1, b2_x1)), 0) * max(
+        (min(b1_y2, b2_y2) - max(b1_y1, b2_y1)),
+        0,
+    )
 
     # Union Area
     w1, h1 = b1_x2 - b1_x1, b1_y2 - b1_y1 + eps
@@ -75,6 +83,7 @@ def bbox_iou(box1: tuple[int, int, int, int], box2: tuple[int, int, int, int], e
     union = w1 * h1 + w2 * h2 - inter + eps
 
     return inter / union
+
 
 def compute_map(
     ground_truth: list[tuple[tuple[int, int, int, int], int]],
@@ -103,28 +112,40 @@ def compute_map(
     iou_vals = []
     conf_vals = []
 
-    for gt_boxes in ground_truth:
-        true_positives = 0
-        all_predictions = len(model_output)
-        if all_predictions == 0:
-            continue
+    num_predictions = len(model_output)
+    if num_predictions == 0:
+        if len(ground_truth) == 0:
+            return 1.0, 0.0, 0.0
+        return 0.0, 0.0, 0.0
 
-        sorted_predictions = sorted(model_output, key=lambda x: x[1], reverse=True)
+    sorted_predictions = sorted(model_output, key=lambda x: x[1], reverse=True)
+
+    for gt_box in ground_truth:
+        true_positives = 0
 
         for pred_box in sorted_predictions:
-            iou = bbox_iou(gt_boxes[0][0], pred_box[0])
-            if iou >= iou_threshold and gt_boxes[0][1] == pred_box[1]:
+            iou = bbox_iou(gt_box[0], pred_box[0])
+            if iou >= iou_threshold and gt_box[1] == pred_box[1]:
                 true_positives += 1
                 iou_vals.append(iou)
                 conf_vals.append(pred_box[2])
 
-        precision = true_positives / all_predictions
+        precision = true_positives / num_predictions
 
         average_precision += precision
 
-    return average_precision / len(ground_truth), np.mean(iou_vals), np.mean(conf_vals)
+    return (
+        float(average_precision / len(ground_truth)),
+        float(np.mean(iou_vals)),
+        float(np.mean(conf_vals)),
+    )
 
-def scale_coords(bbox: tuple[int, int, int, int], s1: tuple[int, int], s2: tuple[int, int]) -> tuple[int, int, int, int]:
+
+def scale_coords(
+    bbox: tuple[int, int, int, int],
+    s1: tuple[int, int],
+    s2: tuple[int, int],
+) -> tuple[int, int, int, int]:
     """
     Scale a bounding box from one image size to another.
 
@@ -159,6 +180,7 @@ def scale_coords(bbox: tuple[int, int, int, int], s1: tuple[int, int], s2: tuple
     scaled_y2 = int(y2 * scale_y)
 
     return (scaled_x1, scaled_y1, scaled_x2, scaled_y2)
+
 
 def change_pair(
     cords: tuple[int, int],

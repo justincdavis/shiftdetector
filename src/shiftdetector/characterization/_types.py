@@ -146,7 +146,10 @@ class AbstractModel(ABC):
         raise NotImplementedError(err_msg)
 
     @abstractmethod
-    def predict(self: Self, data: np.ndarray) -> list[tuple[tuple[int, int, int, int], int, int]]:
+    def predict(
+        self: Self,
+        data: np.ndarray,
+    ) -> list[tuple[tuple[int, int, int, int], int, int]]:
         """
         Predict on the input data.
 

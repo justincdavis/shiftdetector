@@ -13,6 +13,7 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 from __future__ import annotations
 
+import csv
 import json
 import time
 from collections import defaultdict
@@ -20,6 +21,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
 import cv2
+import numpy as np
 
 from shiftdetector.common import compute_map, scale_coords
 
@@ -41,6 +43,7 @@ def _characterize(
     num_power_iterations: int = 100,
     dummy_image_size: tuple[int, int, int] = (640, 480, 3),
     map_iou_threshold: float = 0.5,
+    num_bins: int = 10,
     *,
     use_cached: bool | None = None,
 ) -> None:
@@ -76,6 +79,8 @@ def _characterize(
         The size of the dummy image to use, by default (640, 480, 3)
     map_iou_threshold : float, optional
         The IoU threshold to use for computing mAP, by default 0.5
+    num_bins : int, optional
+        The number of bins to use for binning the data, by default 10
     use_cached : bool, optional
         Whether to use the cached characterization, by default None
         If None, will use the cached characterization if it exists.
@@ -84,6 +89,10 @@ def _characterize(
     ------
     FileNotFoundError
         If the image directory does not exist.
+    RuntimeError
+        If bins and indices cannot be computed.
+        If confidence value is greater than bin key.
+        If confidence value is less than bin key.
     """
     if use_cached is None:
         use_cached = True
@@ -110,7 +119,7 @@ def _characterize(
         err_msg = f"Image directory {image_dir} does not exist."
         raise FileNotFoundError(err_msg)
 
-    image_stats = defaultdict(defaultdict(dict))
+    image_stats: dict[str, dict[str, float]] = defaultdict(dict)
 
     for image_name, gt in zip(image_names, ground_truth):
         imagepath = image_dir / image_name
@@ -125,7 +134,8 @@ def _characterize(
         t_inference = t2 - t1
 
         outputs = [
-            (scale_coords(bbox, image.shape[:2], model.input_size), class_id, score) for bbox, class_id, score in outputs
+            (scale_coords(bbox, image.shape[:2], model.input_size), class_id, score)
+            for bbox, class_id, score in outputs
         ]
         accuracy, iou, conf = compute_map(gt, outputs, iou_threshold=map_iou_threshold)
 
@@ -136,6 +146,95 @@ def _characterize(
         image_stats[image_name]["conf"] = conf
         image_stats[image_name]["energy"] = t_inference * energy
 
+    fieldnames = list(image_stats[image_names[0]].keys())
+
+    with Path.open(output_dir / modelname / f"{modelname}.csv", "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        for image_name, image_data in image_stats.items():
+            entry = {"filename": image_name, **image_data}
+            writer.writerow(entry)
+
+    with Path.open(jsonpath, "r") as f:
+        json_data = json.load(f)
+
+    # raw metrics
+    json_data["power_draw"] = str(energy)
+    for metric in fieldnames:
+        raw_data = [data[metric] for data in image_stats.values()]
+        json_data[metric] = {
+            "mean": str(np.mean(raw_data)),
+            "median": str(np.median(raw_data)),
+            "var": str(np.var(raw_data)),
+            "std": str(np.std(raw_data)),
+            "min": str(np.min(raw_data)),
+            "max": str(np.max(raw_data)),
+        }
+
+    # correlations
+    conf_data = np.array([data["conf"] for data in image_stats.values()])
+    iou_data = np.array([data["iou"] for data in image_stats.values()])
+    json_data["conf_corr"] = str(np.mean(np.corrcoef(conf_data, iou_data)))
+
+    # binning
+    json_bin_data = {}
+    json_bin_data["num_bins"] = num_bins
+    bin_array = np.array([b / num_bins for b in range(num_bins + 1)])
+    indices = np.digitize(conf_data, bin_array)
+
+    if len(indices) != len(conf_data):
+        err_msg = "Could not compute bins and indices."
+        raise RuntimeError(err_msg)
+
+    binned_iou = defaultdict(list)
+    binned_conf = defaultdict(list)
+
+    for idx, indice in enumerate(indices):
+        conf_key = indice / num_bins
+        iou_val = iou_data[idx]
+        conf_val = conf_data[idx]
+        if conf_val > conf_key:
+            err_msg = "Confidence value is greater than bin key."
+            raise RuntimeError(err_msg)
+        if conf_val < conf_key - 1 / num_bins:
+            err_msg = "Confidence value is less than bin key."
+            raise RuntimeError(err_msg)
+        binned_iou[conf_key].append(iou_val)
+        binned_conf[conf_key].append(conf_val)
+
+    possible_bins = [b / num_bins for b in range(num_bins + 1)]
+    for conf_bin in possible_bins:
+        iou_bin_data = binned_iou[conf_bin]
+        conf_bin_data = binned_conf[conf_bin]
+        if len(iou_bin_data) == 0:
+            iou_bin_data = [0.0, 0.0]
+            conf_bin_data = [0.0, 0.0]
+        alpha = np.mean(
+            [i / c for i, c in zip(iou_bin_data, conf_bin_data) if c != 0],
+        )
+        if str(alpha) == "nan":
+            alpha = 1.0
+        z = np.array([1.0, 0.0])
+        if not (np.sum(conf_bin_data) == 0 or np.sum(iou_bin_data) == 0):
+            z = np.polyfit(conf_bin_data, iou_bin_data, 1)
+        conf_bin_corr = float(np.mean(np.corrcoef(conf_bin_data, iou_bin_data)))
+        if str(conf_bin_corr) == "nan":
+            conf_bin_corr = 1.0
+        sub_bin_data = {}
+        sub_bin_data["alpha"] = str(alpha)
+        sub_bin_data["conf_corr"] = str(conf_bin_corr)
+        sub_bin_data["iou_mean"] = str(np.mean(iou_bin_data))
+        sub_bin_data["conf_mean"] = str(np.mean(conf_bin_data))
+        sub_bin_data["fit"] = str(z.tolist())
+        # ignore type error here, since we want a dict with an int entry and
+        # a dict entry so we can read int then read the str keys of the dict
+        json_bin_data[str(conf_bin)] = sub_bin_data  # type: ignore[assignment]
+    json_data["bins"] = json_bin_data
+
+    # write final json file
+    with Path.open(jsonpath, "w") as f:
+        json.dump(json_data, f, ident=4)
+
 
 def characterize(
     model_funcs: list[Callable[[], AbstractModel]],
@@ -143,8 +242,13 @@ def characterize(
     output_dir: Path,
     power_reader: AbstractMeasure,
     get_memory: Callable[[], tuple[int, int, int]],
+    image_dir: Path,
+    image_files: list[str],
+    ground_truth: list[list[tuple[tuple[int, int, int, int], int]]],
     num_power_iterations: int = 100,
     dummy_image_size: tuple[int, int, int] = (640, 480, 3),
+    map_iou_threshold: float = 0.5,
+    num_bins: int = 10,
     *,
     characterize_models: bool | None = None,
     use_cached_energy: bool | None = None,
@@ -169,10 +273,21 @@ def characterize(
     get_memory : Callable[[], tuple[int, int, int]]
         The function to use for getting memory usage.
         Gets the total memory, free memory, and used memory.
+    image_dir : Path
+        The directory containing the images to use for characterization.
+    image_files : list[str]
+        The list of image names to use for characterization.
+    ground_truth : list[list[tuple[tuple[int, int, int, int], int]]]
+        The ground truth bounding boxes and classes for the images.
+        Bounding boxes are assumed to be in the x1, y1, x2, y2 format.
     num_power_iterations : int, optional
         The number of power iterations to take, by default 100
     dummy_image_size : tuple[int, int, int], optional
         The size of the dummy image to use, by default (640, 480, 3)
+    map_iou_threshold : float, optional
+        The IoU threshold to use for computing mAP, by default 0.5
+    num_bins : int, optional
+        The number of bins to use for binning the data, by default 10
     characterize_models : bool, optional
         Whether to characterize the models, by default None
         If None, will set to True and will characterize the
@@ -208,9 +323,13 @@ def characterize(
                 output_dir=output_dir,
                 power_reader=power_reader,
                 steady_state_power=steady_state_power,
+                image_dir=image_dir,
+                image_names=image_files,
+                ground_truth=ground_truth,
                 num_power_iterations=num_power_iterations,
                 dummy_image_size=dummy_image_size,
                 use_cached=use_cached_energy,
+                map_iou_threshold=map_iou_threshold,
+                num_bins=num_bins,
             )
             del model
-

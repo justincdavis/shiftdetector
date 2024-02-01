@@ -63,3 +63,6 @@ def _measure_load(
         "time": {},
         "mem": {},
     }
+
+    for _ in range(num_iterations):
+        

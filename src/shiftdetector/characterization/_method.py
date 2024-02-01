@@ -25,9 +25,12 @@ import numpy as np
 
 from shiftdetector.common import compute_map, scale_coords
 
+from ._graph import build_graph
 from ._helpers import get_power_draw, get_steady_state
 
 if TYPE_CHECKING:
+    import networkx as nx  # type: ignore[import-untyped]
+
     from ._types import AbstractMeasure, AbstractModel
 
 
@@ -134,7 +137,7 @@ def _characterize(
         t_inference = t2 - t1
 
         outputs = [
-            (scale_coords(bbox, image.shape[:2], model.input_size), class_id, score)
+            (scale_coords(bbox, model.input_size, image.shape[:2]), class_id, score)
             for bbox, class_id, score in outputs
         ]
         accuracy, iou, conf = compute_map(gt, outputs, iou_threshold=map_iou_threshold)
@@ -249,9 +252,17 @@ def characterize(
     dummy_image_size: tuple[int, int, int] = (640, 480, 3),
     map_iou_threshold: float = 0.5,
     num_bins: int = 10,
+    graph_metric: str = "conf",
+    min_connects: int = 1,
+    cutoff: float = 0.0,
+    upper_outlier_cutoff: float = 80.0,
+    connectivity: int = 2,
+    graph_type: Callable[[], nx.Graph | nx.DiGraph] | None = None,
     *,
     characterize_models: bool | None = None,
     use_cached_energy: bool | None = None,
+    create_graph: bool | None = None,
+    purge_connectivity: bool | None = None,
 ) -> None:
     """
     Characterize the given models.
@@ -288,6 +299,26 @@ def characterize(
         The IoU threshold to use for computing mAP, by default 0.5
     num_bins : int, optional
         The number of bins to use for binning the data, by default 10
+    graph_metric : str, optional
+        The metric to use for the graph, by default "conf"
+        "conf" is the confidence score of the network.
+        and is used by default as well as in the paper.
+        Other metrics should be used with caution and/or
+        experimentation.
+        Other metrics:
+            "iou" (intersection over union)
+            "energy" (energy usage)
+    min_connects : int, optional
+        The minimum number of connections to use for the graph, by default 1
+    cutoff : float, optional
+        The cutoff to use for the graph, by default 0.0
+    upper_outlier_cutoff : float, optional
+        The upper outlier cutoff to use for the graph, by default 80.0
+    connectivity : int, optional
+        The connectivity to use for the graph, by default 2
+    graph_type : Callable[[], nx.Graph | nx.DiGraph], optional
+        The type of graph to use, by default None
+        If None, will use nx.Graph.
     characterize_models : bool, optional
         Whether to characterize the models, by default None
         If None, will set to True and will characterize the
@@ -296,6 +327,13 @@ def characterize(
     use_cached_energy : bool, optional
         Whether to use the cached energy values, by default None
         If None, will use the cached energy values if they exist.
+    create_graph : bool, optional
+        Whether or not to create the confidence graph.
+        By default None, which will create the graph.
+    purge_connectivity : bool, optional
+        If True, the cutoff will be iteratively increased until the graph
+        has the minimum number of connected components.
+        By default None, which will not purge the graph.
     """
     if characterize_models is None:
         characterize_models = True
@@ -333,3 +371,16 @@ def characterize(
                 num_bins=num_bins,
             )
             del model
+
+    if create_graph:
+        build_graph(
+            output_dir=output_dir,
+            num_bins=num_bins,
+            metric=graph_metric,
+            min_connects=min_connects,
+            cutoff=cutoff,
+            upper_outlier_cutoff=upper_outlier_cutoff,
+            connectivity=connectivity,
+            graph_type=graph_type,
+            purge_connectivity=purge_connectivity,
+        )

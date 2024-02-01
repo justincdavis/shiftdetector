@@ -17,10 +17,25 @@ Module which contains tools for characterization of object detection models.
 This module contains tools for characterizing object detection models. The
 characterization tools are used to generate a characterization of the model's
 performance and resource usage.
+
+Classes
+-------
+AbstractMeasure
+    An abstract class for defining the interface for data measurement.
+AbstractModel
+    An abstract class for defining the interface for object detection models.
+
+Functions
+---------
+build_graph
+    Build a graph from the edges and weights.
+characterize
+    Characterize a list of object detection models.
 """
 from __future__ import annotations
 
+from ._graph import build_graph
 from ._method import characterize
-from ._types import AbstractMeasure
+from ._types import AbstractMeasure, AbstractModel
 
-__all__ = ["AbstractMeasure", "characterize"]
+__all__ = ["AbstractMeasure", "AbstractModel", "build_graph", "characterize"]

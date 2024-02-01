@@ -36,6 +36,8 @@ classifiers = [
 requires-python=">=3.8, <=3.12"
 dependencies = [
     "opencv-contrib-python>=4.8.0",
+    "networkx>=3.0.0",
+    "numpy>=1.21.0,<2.0.0",
     "typing_extensions>=4.0.0",
     "setuptools>=59.0.0",
 ]
@@ -152,6 +154,7 @@ warn_return_any = true
 [[tool.mypy.overrides]]
 module = [
     'jtop',
+    'networkx',
 ]
 ignore_errors = true
 

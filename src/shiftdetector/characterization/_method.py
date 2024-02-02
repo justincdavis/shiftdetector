@@ -27,6 +27,7 @@ from shiftdetector.common import compute_map, scale_coords
 
 from ._graph import build_graph
 from ._helpers import get_power_draw, get_steady_state
+from ._load import measure_load
 
 if TYPE_CHECKING:
     import networkx as nx  # type: ignore[import-untyped]
@@ -242,6 +243,7 @@ def _characterize(
 def characterize(
     model_funcs: list[Callable[[], AbstractModel]],
     model_names: list[str],
+    import_funcs: list[Callable[[], None]],
     output_dir: Path,
     power_reader: AbstractMeasure,
     get_memory: Callable[[], tuple[int, int, int]],
@@ -249,6 +251,7 @@ def characterize(
     image_files: list[str],
     ground_truth: list[list[tuple[tuple[int, int, int, int], int]]],
     num_power_iterations: int = 100,
+    steady_state_sample_time: float = 10.0,
     dummy_image_size: tuple[int, int, int] = (640, 480, 3),
     map_iou_threshold: float = 0.5,
     num_bins: int = 10,
@@ -263,6 +266,7 @@ def characterize(
     use_cached_energy: bool | None = None,
     create_graph: bool | None = None,
     purge_connectivity: bool | None = None,
+    measure_load_stats: bool | None = None,
 ) -> None:
     """
     Characterize the given models.
@@ -277,6 +281,10 @@ def characterize(
         Each function should return an instance of a model.
     model_names : list[str]
         The list of model names to use for the models.
+    import_funcs : list[Callable[[], None]]
+        The list of import functions to use for the models.
+        Each function should import all the necessary modules
+        for and dependencies of the model.
     output_dir : Path
         The directory to save the characterization to.
     power_reader : AbstractMeasure
@@ -293,6 +301,8 @@ def characterize(
         Bounding boxes are assumed to be in the x1, y1, x2, y2 format.
     num_power_iterations : int, optional
         The number of power iterations to take, by default 100
+    steady_state_sample_time : float, optional
+        The time to sample the steady state power and memory, by default 10.0 seconds
     dummy_image_size : tuple[int, int, int], optional
         The size of the dummy image to use, by default (640, 480, 3)
     map_iou_threshold : float, optional
@@ -334,9 +344,16 @@ def characterize(
         If True, the cutoff will be iteratively increased until the graph
         has the minimum number of connected components.
         By default None, which will not purge the graph.
+    measure_load_stats : bool, optional
+        Whether to measure the load time, energy, and memory usage of the model.
+        By default None, which will measure the load time, energy, and memory usage.
     """
     if characterize_models is None:
         characterize_models = True
+    if create_graph is None:
+        create_graph = True
+    if measure_load_stats is None:
+        measure_load_stats = True
 
     if not Path.exists(output_dir):
         Path.mkdir(output_dir, parents=True)
@@ -344,12 +361,16 @@ def characterize(
 
     jsonpath = output_dir / "steady_state.json"
     if not Path.exists(jsonpath):
-        steady_state = get_steady_state(power_reader, get_memory)
+        steady_state = get_steady_state(
+            power_reader,
+            get_memory,
+            steady_state_sample_time,
+        )
         with Path.open(jsonpath, "w") as f:
             json.dump(steady_state, f, ident=4)
 
-    jsonstr = str(jsonpath.resolve())
-    steady_state = json.load(jsonstr)  # type: ignore[arg-type]
+    with Path.open(jsonpath, "r") as f:
+        steady_state = json.load(f)
     steady_state_power = float(steady_state["power_draw"])
 
     if characterize_models:
@@ -371,6 +392,22 @@ def characterize(
                 num_bins=num_bins,
             )
             del model
+
+    if measure_load_stats:
+        for model_func, model_name, import_func in zip(
+            model_funcs,
+            model_names,
+            import_funcs,
+        ):
+            measure_load(
+                output_dir=output_dir,
+                model_func=model_func,
+                modelname=model_name,
+                power_reader=power_reader,
+                memory_func=get_memory,
+                import_handle=import_func,
+                steady_state_sample_time=steady_state_sample_time,
+            )
 
     if create_graph:
         build_graph(

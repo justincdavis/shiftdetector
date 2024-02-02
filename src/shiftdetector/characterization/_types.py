@@ -41,6 +41,8 @@ class AbstractMeasure(ABC):
         Get the data data.
     measure_data()
         Measure the data. Abstract method.
+    reset()
+        Reset the data.
     """
 
     def __init__(self: Self, interval: float = 0.05) -> None:
@@ -93,6 +95,10 @@ class AbstractMeasure(ABC):
             t0 = time.perf_counter()
             self._data.append(self.measure_data())
             time.sleep(self._interval - (time.perf_counter() - t0))
+
+    def reset(self: Self) -> None:
+        """Reset the data."""
+        self._data = []
 
 
 class AbstractModel(ABC):

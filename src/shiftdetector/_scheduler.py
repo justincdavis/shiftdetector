@@ -11,18 +11,21 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
+# ruff: noqa: S301, S403
 from __future__ import annotations
 
 import json
 import math
 import os
-import pickle  # noqa: S403
+import pickle
 from collections import defaultdict, deque
 from pathlib import Path
 
-import networkx as nx
+import networkx as nx  # type: ignore[import-untyped]
 import numpy as np
 from typing_extensions import Self
+
+from .common import ncc, sanitize_bbox
 
 
 class Shift:
@@ -57,6 +60,10 @@ class Shift:
             The default is 0.5.
             The higher the value the more models are included for candidacy.
             The lower the value the less models are included for candidacy.
+        accuracy_threshold : float, optional
+            The accuracy to target when choosing which models to schedule.
+            If the predicted accuracy is below this threshold, then the model
+            will not be scheduled.
         momentum : int, optional
             The number of previous accuracy estimates to use when determining
             the current accuracy of a model.
@@ -80,8 +87,8 @@ class Shift:
             and energy as keys. All values should be floats.
         """
         self._stats_dir = stats_dir
-        self._cost_threshold = cost_threshold
-        self._accuracy_threshold = accuracy_threshold
+        self._cost_threshold: float = cost_threshold
+        self._accuracy_threshold: float = accuracy_threshold
         self._momentum = momentum
         if solve_method not in ["greedy", "optimal"]:
             err_msg = f"Invalid solve method {solve_method}"
@@ -115,7 +122,7 @@ class Shift:
         self._possible_models = self._get_possible_models()
 
         # at this point public methods are usable
-        self._moments = {
+        self._moments: dict[str, deque] = {
             m: deque(maxlen=self._momentum) for m in self._possible_models
         }
         self._static_attrs = {
@@ -136,23 +143,24 @@ class Shift:
         # check stats dir for shift_candidates.pkl
         self._cache_path = Path(self._stats_dir) / "shift_candidates.pkl"
         if not Path.exists(self._cache_path):
-            self._candidates = self._pregenerate()  # huge runtime speedup
+            new_candidates = self._pregenerate()  # huge runtime speedup
             with Path.open(self._cache_path, "wb") as f:
-                pickle.dump(self._candidates, f, pickle.HIGHEST_PROTOCOL)
+                pickle.dump(new_candidates, f, pickle.HIGHEST_PROTOCOL)
+            self._candidates = new_candidates[self._cost_threshold]
         else:
             with Path.open(self._cache_path, "rb") as f:
-                self._candidates = pickle.load(f)  # noqa: S301
+                new_candidates = pickle.load(f)
                 try:
-                    self._candidates = self._candidates[self._cost_threshold]
+                    self._candidates = new_candidates[self._cost_threshold]
                 except KeyError:
                     new_candidates = self._pregenerate()
+                    with Path.open(self._cache_path, "wb") as cf:
+                        pickle.dump(new_candidates, cf, pickle.HIGHEST_PROTOCOL)
                     self._candidates = new_candidates[self._cost_threshold]
-                    with Path.open(self._cache_path, "wb") as f:
-                        pickle.dump(new_candidates, f, pickle.HIGHEST_PROTOCOL)
 
         # precompute the energy and latency values (inverted for bigger is bigger metrics)
         self._energy = [(m, 1.0 - (e / max(self._static_attrs["energy"].values()))) for m, e in self._static_attrs["energy"].items()]
-        self._latency = [(m, 1.0 - (l / max(self._static_attrs["latency"].values()))) for m, l in self._static_attrs["latency"].items()]
+        self._latency = [(m, 1.0 - (lat / max(self._static_attrs["latency"].values()))) for m, lat in self._static_attrs["latency"].items()]
 
         # # test out transform to energy/latency to "spread out" the values
         # self._energy = self._transform(self._energy)
@@ -172,10 +180,10 @@ class Shift:
         models = [m for m, _ in data]
         vals = [e for _, e in data]
         new_vals = np.argsort(np.argsort(vals)).astype(float) / len(vals)
-        return [(m, v) for m, v in zip(models, new_vals)]
+        return list(zip(models, new_vals))
 
     @property
-    def possible_models(self) -> list[str]:
+    def possible_models(self: Self) -> list[str]:
         """
         Use to get the possible models to use for inference.
 
@@ -187,7 +195,7 @@ class Shift:
         return self._possible_models
 
     @property
-    def accuracy(self) -> float:
+    def accuracy(self: Self) -> float:
         """
         Use to get the accuracy knob value.
 
@@ -199,7 +207,7 @@ class Shift:
         return self._knobs["accuracy"]
 
     @accuracy.setter
-    def accuracy(self, value: float) -> None:
+    def accuracy(self: Self, value: float) -> None:
         """
         Use to set the accuracy knob value.
 
@@ -211,7 +219,7 @@ class Shift:
         self._knobs["accuracy"] = value
 
     @property
-    def latency(self) -> float:
+    def latency(self: Self) -> float:
         """
         Use to get the latency knob value.
 
@@ -223,7 +231,7 @@ class Shift:
         return self._knobs["latency"]
 
     @latency.setter
-    def latency(self, value: float) -> None:
+    def latency(self: Self, value: float) -> None:
         """
         Use to set the latency knob value.
 
@@ -235,7 +243,7 @@ class Shift:
         self._knobs["latency"] = value
 
     @property
-    def energy(self) -> float:
+    def energy(self: Self) -> float:
         """
         Use to get the energy knob value.
 
@@ -247,7 +255,7 @@ class Shift:
         return self._knobs["energy"]
 
     @energy.setter
-    def energy(self, value: float) -> None:
+    def energy(self: Self, value: float) -> None:
         """
         Use to set the energy knob value.
 
@@ -259,7 +267,7 @@ class Shift:
         self._knobs["energy"] = value
 
     @property
-    def knobs(self) -> tuple[float, float, float]:
+    def knobs(self: Self) -> tuple[float, float, float]:
         """
         Use to get the knobs.
 
@@ -272,7 +280,7 @@ class Shift:
 
     @knobs.setter
     def knobs(
-        self,
+        self: Self,
         values: tuple[float, float, float],
     ) -> None:
         """
@@ -285,40 +293,18 @@ class Shift:
         """
         self._knobs["accuracy"], self._knobs["latency"], self._knobs["energy"] = values
 
-    @staticmethod
-    def _sanitize_bbox(bbox: tuple[int, int, int, int], width: int, height: int, min_size: int = 10) -> tuple[int, int, int, int]:
-        def change_pair(cords: tuple[int, int], maxval: int, minval: int, min_size: int = 10) -> tuple[int, int]:
-            c1, c2 = cords
-            counter = 0
-            while counter < 3:
-                diff = c2 - c1
-                if diff < min_size:
-                    offset = int((min_size - diff) / 2)
-                    if c1 > (minval + offset):
-                        c1 -= offset
-                    if c2 < (maxval - offset):
-                        c2 += offset
-                else:
-                    break
-                counter += 1
-            return c1, c2
-        x1, y1, x2, y2 = bbox
-        x1 = max(x1, 0)
-        y1 = max(y1, 0)
-        x2 = min(x2, width)
-        y2 = min(y2, width)
-        x1, x2 = change_pair((x1, x2), width, 0, min_size)
-        y1, y2 = change_pair((y1, y2), height, 0, min_size)
-        return x1, y1, x2, y2
-
-    def _ncc(self, image: np.ndarray, bbox_roi: tuple[int, int, int, int]) -> float:
-        bbox_roi = self._sanitize_bbox(bbox_roi, image.shape[1], image.shape[0])
-        bbox_ncc = self._ncc_bbox(image[bbox_roi[1]:bbox_roi[3], bbox_roi[0]:bbox_roi[2]])
-        image_ncc = self._ncc_image(image)
+    def _ncc(self: Self, image: np.ndarray, bbox_roi: tuple[int, int, int, int]) -> float:
+        if self._last_image is None:
+            self._last_image = image
+            return 0.0
+        bbox_roi = sanitize_bbox(bbox_roi, image.shape[1], image.shape[0])
+        bbox_ncc = ncc(image[bbox_roi[1]:bbox_roi[3], bbox_roi[0]:bbox_roi[2]], self._last_image[bbox_roi[1]:bbox_roi[3], bbox_roi[0]:bbox_roi[2]], (24, 24))
+        image_ncc = ncc(image, self._last_image, (112, 112))
+        self._last_image = image
         return max(bbox_ncc * image_ncc, 0.0)
 
-    def _pregenerate(self) -> None:
-        accuracy_estimates = {}
+    def _pregenerate(self: Self) -> dict[float, dict[str, list[tuple[str, float, float]]]]:
+        accuracy_estimates: dict[str, list[tuple[str, float, float]]] = {}
         for modelname in self.get_possible_models():
             for i in range(1, 100, 1):
                 confidence = i / 100
@@ -329,39 +315,39 @@ class Shift:
                 # save to dict
                 accuracy_estimates[node_name] = estimates
         # check if the cache file already exists
-        cache_data = {}
-        if os.path.exists(self._cache_path):
-            with open(self._cache_path, "rb") as f:
+        cache_data: dict[float, dict[str, list[tuple[str, float, float]]]] = {}
+        if Path.exists(self._cache_path):
+            with Path.open(self._cache_path, "rb") as f:
                 cache_data = pickle.load(f)  # the cache data is a dictionary
         cache_data[self._cost_threshold] = accuracy_estimates
         return cache_data
 
-    def _get_possible_models(self) -> list[str]:
-        nodes = list(self._conf_graph.nodes())
-        nodes = {n[:n.rfind("_")] for n in nodes}
+    def _get_possible_models(self: Self) -> list[str]:
+        nodes: list[str] = list(self._conf_graph.nodes())
+        nodeset = {n[:n.rfind("_")] for n in nodes}
         # extra iteration to fold off processing unit (but should keep)
         # nodes = set([n[:n.rfind("_")] if "_" in n else n for n in nodes])
-        return sorted(list(nodes))
+        return sorted(nodeset)
 
-    def _conf_to_bin(self, confidence: float) -> float:
-        confidence = math.ceil(confidence * self._num_bins) / self._num_bins
-        return confidence
+    def _conf_to_bin(self: Self, confidence: float) -> float:
+        return math.ceil(confidence * self._num_bins) / self._num_bins
 
-    def _get_node_name(self, modelname: str, raw_confidence: float) -> str:
+    def _get_node_name(self: Self, modelname: str, raw_confidence: float) -> str:
         confidence = self._conf_to_bin(raw_confidence)
         return f"{modelname}_{confidence}"
 
-    def _get_neighbors(self, node_name: str) -> list:
+    def _get_neighbors(self: Self, node_name: str) -> list:
         try:
             edges = nx.bfs_tree(self._conf_graph, node_name).edges()
             weights = [self._conf_graph.get_edge_data(*e)["weight"] for e in edges]
             edges = [(e, w) for e, w in zip(edges, weights) if w <= self._cost_threshold]
             nodes = [(e[1], w) for e, w in edges]
-            return nodes
         except nx.exception.NetworkXError:
             return []
+        else:
+            return nodes
 
-    def _get_accuracy_estimate(self, node_name: str, raw_confidence: float | None = None) -> tuple[str, float]:
+    def _get_accuracy_estimate(self: Self, node_name: str, raw_confidence: float | None = None) -> tuple[str, float]:
         idx = node_name.rfind("_")
         modelname = node_name[:idx]
         confidence = node_name[idx + 1:]
@@ -369,23 +355,23 @@ class Shift:
             accuracy = float(self._model_stats[modelname]["bins"][confidence]["iou_mean"])
         else:
             fit_data = self._model_stats[modelname]["bins"][confidence]["fit"]
-            fit_data = [f for f in fit_data.split(",")]
+            fit_data = list(fit_data.split(","))
             slope = float(fit_data[0].replace("[", ""))
             intercept = float(fit_data[1].replace("]", ""))
             accuracy = slope * raw_confidence + intercept
         return node_name, accuracy
 
-    def _get_accuracy_estimates(self, node_name: str) -> list:
+    def _get_accuracy_estimates(self: Self, node_name: str) -> list[tuple[str, float, float]]:
         current_accuracy_estimate = self._get_accuracy_estimate(node_name)
         neighbors = self._get_neighbors(node_name)
         # get the accuracy estimate of the neighbors and current
-        accuracy_estimates = [(*self._get_accuracy_estimate(n), w) for n, w in neighbors]
+        accuracy_estimates: list[tuple[str, float, float]] = [(*self._get_accuracy_estimate(n), w) for n, w in neighbors]
         accuracy_estimates.append((*current_accuracy_estimate, 0.0))  # current model has 0 cost
         # fold models with the same name into an averaged estimate
-        modelname_to_accuracy = defaultdict(lambda: (list(), list()))
-        for _ in range(1):  # do not fold processing units since energy/latency is not the same
+        modelname_to_accuracy: dict[str, tuple[list[float], list[float]]] = {}
         # for _ in range(2):  # two iterations, one to fold off confidence, one to fold processors
-            temp_m2a = defaultdict(lambda: (list(), list()))
+        for _ in range(1):  # do not fold processing units since energy/latency is not the same
+            temp_m2a: dict[str, tuple[list[float], list[float]]] = defaultdict(lambda: ([], []))
             for n, a, w in accuracy_estimates:
                 n_idx = len(n) + 1
                 if "_" in n:
@@ -409,7 +395,7 @@ class Shift:
 
         return accuracy_estimates
 
-    def _get_candidates(self, modelname: str, confidence: float) -> str:
+    def _get_candidates(self: Self, modelname: str, confidence: float) -> str:
         # get the node name
         confidence = self._conf_to_bin(confidence)
         node_name = self._get_node_name(modelname, confidence)
@@ -417,10 +403,10 @@ class Shift:
         # get the neighbors of the node
         try:
             return self._candidates[node_name]
-        except Exception:
+        except KeyError:
             return self._get_accuracy_estimates(node_name)
 
-    def __call__(self, modelname: str, confidence: float, image: np.ndarray, bbox: tuple[int, int, int, int]) -> str:
+    def __call__(self: Self, modelname: str, confidence: float, image: np.ndarray, bbox: tuple[int, int, int, int]) -> str:
         # solve the ncc
         ncc = self._ncc(image, bbox)
         if ncc * confidence >= self._accuracy_threshold and self._last_model is not None:
@@ -449,14 +435,14 @@ class Shift:
             # scale energy and latency to be 0 to 1 metrics
             # also reverse the values so that higher is better
             # leave accuracy alone since already 0 to 1 metrics
-            accuracy = [(m, a) for m, a in var_attrs["accuracy"].items()]
+            accuracy = list(var_attrs["accuracy"].items())
 
             model_data = []
-            for (m, a), (_, e), (_, l) in zip(accuracy, self._energy, self._latency):
+            for (m, a), (_, e), (_, latency) in zip(accuracy, self._energy, self._latency):
                 if a >= self._accuracy_threshold:
-                    model_data.append((m, a, e, l))
+                    model_data.append((m, a, e, latency))
             if len(model_data) == 0:
-                model_data = [(m, a, e, l) for (m, a), (_, e), (_, l) in zip(accuracy, self._energy, self._latency)]
+                model_data = [(m, a, e, lat) for (m, a), (_, e), (_, lat) in zip(accuracy, self._energy, self._latency)]
 
             # # use the knobs to determine the fitness of each model
             # fitness = [
@@ -464,7 +450,7 @@ class Shift:
             #     for (m, a), (_, e), (_, l) in zip(accuracy, energy, latency)
             # ]
             fitness = [
-                (m, a * self._knobs["accuracy"] + e * self._knobs["energy"] + l * self._knobs["latency"]) for m, a, e, l in model_data
+                (m, a * self._knobs["accuracy"] + e * self._knobs["energy"] + lat * self._knobs["latency"]) for m, a, e, lat in model_data
             ]
 
             # for a, e, l in zip(accuracy, energy, latency):
@@ -474,12 +460,13 @@ class Shift:
             fitness = sorted(fitness, key=lambda x: x[1], reverse=True)
             best_model = fitness[0][0]
         else:
-            raise NotImplementedError("Optimal solve method not implemented")
+            err_msg = "Optimal solve method not implemented"
+            raise NotImplementedError(err_msg)
 
         self._last_model = best_model
         return best_model
 
-    def get_possible_models(self) -> list[str]:
+    def get_possible_models(self: Self) -> list[str]:
         """
         Use to get the possible models to use for inference.
 

@@ -31,7 +31,7 @@ clean:
 	rm -rf .ruff_cache
 
 docs:
-	python3 scripts/build_example_docs.py
+	python3 ci/build_example_docs.py
 	rm -rf docs/source/*
 	sphinx-apidoc -o docs/source/ src/shiftdetector/
 	cd docs && make html
@@ -45,7 +45,7 @@ pyright:
 	python3 -m pyright --project=pyproject.toml
 
 pyupgrade:
-	-./scripts/ci/pyupgrade.sh
+	-./ci/pyupgrade.sh
 
 isort:
 	python3 -m isort src/shiftdetector
@@ -57,14 +57,14 @@ ruff:
 	python3 -m ruff ./src/shiftdetector --fix --preview
 
 stubs:
-	python3 scripts/make_stubs.py
+	python3 ci/make_stubs.py
 
 test:
-	./scripts/run_tests.sh
+	./ci/run_tests.sh
 
 example-ci: pyupgrade
 	python3 -m ruff ./examples --fix --preview --ignore=T201,INP001,F841
 	python3 -m isort examples
 	python3 -m black examples --safe
 
-release: clean ci test docs example-ci
+release: clean blobs ci test docs example-ci

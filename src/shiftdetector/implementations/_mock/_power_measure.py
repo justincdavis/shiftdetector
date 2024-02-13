@@ -11,25 +11,29 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
-# ruff: noqa: N801
-"""Module for implemenations on hardware."""
 from __future__ import annotations
 
 from typing_extensions import Self
 
-try:
-    from . import _jetson as jetson
-except ImportError:
-
-    class jetson:  # type: ignore[no-redef]
-        """Mock class for Jetson implementation."""
-
-        def __getattr__(self: Self, name: str) -> None:
-            """Error message for Jetson."""
-            err_msg = "Jetson implementation not available."
-            raise NotImplementedError(err_msg)
+from shiftdetector.characterization import AbstractMeasure
 
 
-from . import _mock as mock
+class MockPowerMeasure(AbstractMeasure):
+    """Mock power measure."""
 
-__all__ = ["jetson", "mock"]
+    def __init__(self: Self, power: float | None = None) -> None:
+        """
+        Initialize the mock power measure.
+
+        Parameters
+        ----------
+        power : float, optional
+            The power, by default None
+            If None, 1.0 is used
+        """
+        super().__init__()
+        self._power = power if power is not None else 1.0
+
+    def measure_data(self: Self) -> float:
+        """Measure the power."""
+        return self._power

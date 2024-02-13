@@ -309,8 +309,5 @@ def ncc(
 
     return float(
         np.sum(image1_numerator * image2_numerator)
-        / (
-            np.sqrt(np.sum(image1_numerator**2))
-            * np.sqrt(np.sum(image2_numerator**2))
-        ),
+        / (np.sqrt(np.sum(image1_numerator**2)) * np.sqrt(np.sum(image2_numerator**2))),
     )

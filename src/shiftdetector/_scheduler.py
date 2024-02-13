@@ -94,11 +94,15 @@ class Shift:
             err_msg = f"Invalid solve method {solve_method}"
             raise ValueError(err_msg)
         self._solve_method = solve_method
-        self._knobs = {
-            "accuracy": 0.85,
-            "latency": 0.10,
-            "energy": 0.10,
-        } if knobs is None else knobs
+        self._knobs = (
+            {
+                "accuracy": 0.85,
+                "latency": 0.10,
+                "energy": 0.10,
+            }
+            if knobs is None
+            else knobs
+        )
         knob_keys = set(self._knobs.keys())
         if knob_keys != {"accuracy", "latency", "energy"}:
             err_msg = f"Invalid knob keys {knob_keys}"
@@ -117,7 +121,10 @@ class Shift:
                 directorypath = Path(root) / directory
                 with Path.open(Path(directorypath) / f"{modelname}.json") as f:
                     self._model_stats[modelname] = json.load(f)
-        self._conf_graph = nx.read_weighted_edgelist(self._conf_graph_path, nodetype=str)
+        self._conf_graph = nx.read_weighted_edgelist(
+            self._conf_graph_path,
+            nodetype=str,
+        )
         self._iou_graph = nx.read_weighted_edgelist(self._iou_graph_path, nodetype=str)
         self._possible_models = self._get_possible_models()
 
@@ -126,19 +133,21 @@ class Shift:
             m: deque(maxlen=self._momentum) for m in self._possible_models
         }
         self._static_attrs = {
-            "accuracy": {
-                n: 0.0 for n in self._possible_models
-            },
+            "accuracy": {n: 0.0 for n in self._possible_models},
             "energy": {
-                n: float(self._model_stats[n]["energy"]["mean"]) for n in self._possible_models
+                n: float(self._model_stats[n]["energy"]["mean"])
+                for n in self._possible_models
             },
             "latency": {
-                n: float(self._model_stats[n]["time"]["mean"]) for n in self._possible_models
+                n: float(self._model_stats[n]["time"]["mean"])
+                for n in self._possible_models
             },
         }
 
         # get the number of bins
-        self._num_bins = float(self._model_stats[self._possible_models[0]]["bins"]["num_bins"])
+        self._num_bins = float(
+            self._model_stats[self._possible_models[0]]["bins"]["num_bins"],
+        )
 
         # check stats dir for shift_candidates.pkl
         self._cache_path = Path(self._stats_dir) / "shift_candidates.pkl"
@@ -159,8 +168,14 @@ class Shift:
                     self._candidates = new_candidates[self._cost_threshold]
 
         # precompute the energy and latency values (inverted for bigger is bigger metrics)
-        self._energy = [(m, 1.0 - (e / max(self._static_attrs["energy"].values()))) for m, e in self._static_attrs["energy"].items()]
-        self._latency = [(m, 1.0 - (lat / max(self._static_attrs["latency"].values()))) for m, lat in self._static_attrs["latency"].items()]
+        self._energy = [
+            (m, 1.0 - (e / max(self._static_attrs["energy"].values())))
+            for m, e in self._static_attrs["energy"].items()
+        ]
+        self._latency = [
+            (m, 1.0 - (lat / max(self._static_attrs["latency"].values())))
+            for m, lat in self._static_attrs["latency"].items()
+        ]
 
         # # test out transform to energy/latency to "spread out" the values
         # self._energy = self._transform(self._energy)
@@ -168,9 +183,7 @@ class Shift:
 
         # assign attributes for image similarity
         self._last_image: np.ndarray | None = None
-        self._last_image_ncc: np.ndarray | None = None
-        self._last_bbox_roi: np.ndarray | None = None
-        self._last_bbox_ncc: np.ndarray | None = None
+        self._last_bbox: tuple[int, int, int, int] | None = None
 
         # state tracking for last returned model
         self._last_model: str | None = None
@@ -293,17 +306,32 @@ class Shift:
         """
         self._knobs["accuracy"], self._knobs["latency"], self._knobs["energy"] = values
 
-    def _ncc(self: Self, image: np.ndarray, bbox_roi: tuple[int, int, int, int]) -> float:
-        if self._last_image is None:
+    def _ncc(
+        self: Self,
+        image: np.ndarray,
+        bbox_roi: tuple[int, int, int, int],
+    ) -> float:
+        if self._last_image is None or self._last_bbox is None:
             self._last_image = image
+            self._last_bbox = sanitize_bbox(bbox_roi, image.shape[1], image.shape[0])
             return 0.0
         bbox_roi = sanitize_bbox(bbox_roi, image.shape[1], image.shape[0])
-        bbox_ncc = ncc(image[bbox_roi[1]:bbox_roi[3], bbox_roi[0]:bbox_roi[2]], self._last_image[bbox_roi[1]:bbox_roi[3], bbox_roi[0]:bbox_roi[2]], (24, 24))
+        bbox_ncc = ncc(
+            image[bbox_roi[1] : bbox_roi[3], bbox_roi[0] : bbox_roi[2]],
+            self._last_image[
+                self._last_bbox[1] : self._last_bbox[3],
+                self._last_bbox[0] : self._last_bbox[2],
+            ],
+            (24, 24),
+        )
         image_ncc = ncc(image, self._last_image, (112, 112))
         self._last_image = image
+        self._last_bbox = bbox_roi
         return max(bbox_ncc * image_ncc, 0.0)
 
-    def _pregenerate(self: Self) -> dict[float, dict[str, list[tuple[str, float, float]]]]:
+    def _pregenerate(
+        self: Self,
+    ) -> dict[float, dict[str, list[tuple[str, float, float]]]]:
         accuracy_estimates: dict[str, list[tuple[str, float, float]]] = {}
         for modelname in self.get_possible_models():
             for i in range(1, 100, 1):
@@ -324,7 +352,7 @@ class Shift:
 
     def _get_possible_models(self: Self) -> list[str]:
         nodes: list[str] = list(self._conf_graph.nodes())
-        nodeset = {n[:n.rfind("_")] for n in nodes}
+        nodeset = {n[: n.rfind("_")] for n in nodes}
         # extra iteration to fold off processing unit (but should keep)
         # nodes = set([n[:n.rfind("_")] if "_" in n else n for n in nodes])
         return sorted(nodeset)
@@ -340,19 +368,27 @@ class Shift:
         try:
             edges = nx.bfs_tree(self._conf_graph, node_name).edges()
             weights = [self._conf_graph.get_edge_data(*e)["weight"] for e in edges]
-            edges = [(e, w) for e, w in zip(edges, weights) if w <= self._cost_threshold]
+            edges = [
+                (e, w) for e, w in zip(edges, weights) if w <= self._cost_threshold
+            ]
             nodes = [(e[1], w) for e, w in edges]
         except nx.exception.NetworkXError:
             return []
         else:
             return nodes
 
-    def _get_accuracy_estimate(self: Self, node_name: str, raw_confidence: float | None = None) -> tuple[str, float]:
+    def _get_accuracy_estimate(
+        self: Self,
+        node_name: str,
+        raw_confidence: float | None = None,
+    ) -> tuple[str, float]:
         idx = node_name.rfind("_")
         modelname = node_name[:idx]
-        confidence = node_name[idx + 1:]
+        confidence = node_name[idx + 1 :]
         if raw_confidence is None:
-            accuracy = float(self._model_stats[modelname]["bins"][confidence]["iou_mean"])
+            accuracy = float(
+                self._model_stats[modelname]["bins"][confidence]["iou_mean"],
+            )
         else:
             fit_data = self._model_stats[modelname]["bins"][confidence]["fit"]
             fit_data = list(fit_data.split(","))
@@ -361,17 +397,28 @@ class Shift:
             accuracy = slope * raw_confidence + intercept
         return node_name, accuracy
 
-    def _get_accuracy_estimates(self: Self, node_name: str) -> list[tuple[str, float, float]]:
+    def _get_accuracy_estimates(
+        self: Self,
+        node_name: str,
+    ) -> list[tuple[str, float, float]]:
         current_accuracy_estimate = self._get_accuracy_estimate(node_name)
         neighbors = self._get_neighbors(node_name)
         # get the accuracy estimate of the neighbors and current
-        accuracy_estimates: list[tuple[str, float, float]] = [(*self._get_accuracy_estimate(n), w) for n, w in neighbors]
-        accuracy_estimates.append((*current_accuracy_estimate, 0.0))  # current model has 0 cost
+        accuracy_estimates: list[tuple[str, float, float]] = [
+            (*self._get_accuracy_estimate(n), w) for n, w in neighbors
+        ]
+        accuracy_estimates.append(
+            (*current_accuracy_estimate, 0.0),
+        )  # current model has 0 cost
         # fold models with the same name into an averaged estimate
         modelname_to_accuracy: dict[str, tuple[list[float], list[float]]] = {}
         # for _ in range(2):  # two iterations, one to fold off confidence, one to fold processors
-        for _ in range(1):  # do not fold processing units since energy/latency is not the same
-            temp_m2a: dict[str, tuple[list[float], list[float]]] = defaultdict(lambda: ([], []))
+        for _ in range(
+            1,
+        ):  # do not fold processing units since energy/latency is not the same
+            temp_m2a: dict[str, tuple[list[float], list[float]]] = defaultdict(
+                lambda: ([], []),
+            )
             for n, a, w in accuracy_estimates:
                 n_idx = len(n) + 1
                 if "_" in n:
@@ -383,19 +430,28 @@ class Shift:
                     temp_m2a[n[:n_idx]][0].append(a)
                     temp_m2a[n[:n_idx]][1].append(w)
             modelname_to_accuracy = temp_m2a
-            accuracy_estimates = [
-                (n, a, w) for n, (a, w) in modelname_to_accuracy.items()
-            ]
+            # accuracy_estimates = [
+            #     (n, a, w) for n, (a, w) in modelname_to_accuracy.items()
+            # ]
         accuracy_estimates = []
         for mname, (accuracies, weights) in modelname_to_accuracy.items():
-            inv_weights = [max(((self._cost_threshold - w) / self._cost_threshold) ** 2, 1e-8) for w in weights]
-            est_acc = np.average(accuracies, weights=inv_weights)
-            harmonic_mean_weight = len(weights) / sum([1.0 / max(w, 1e-8) for w in weights])
+            inv_weights = [
+                max(((self._cost_threshold - w) / self._cost_threshold) ** 2, 1e-8)
+                for w in weights
+            ]
+            est_acc = float(np.average(accuracies, weights=inv_weights))
+            harmonic_mean_weight = len(weights) / sum(
+                [1.0 / max(w, 1e-8) for w in weights],
+            )
             accuracy_estimates.append((mname, est_acc, harmonic_mean_weight))
 
         return accuracy_estimates
 
-    def _get_candidates(self: Self, modelname: str, confidence: float) -> str:
+    def _get_candidates(
+        self: Self,
+        modelname: str,
+        confidence: float,
+    ) -> list[tuple[str, float, float]]:
         # get the node name
         confidence = self._conf_to_bin(confidence)
         node_name = self._get_node_name(modelname, confidence)
@@ -406,10 +462,19 @@ class Shift:
         except KeyError:
             return self._get_accuracy_estimates(node_name)
 
-    def __call__(self: Self, modelname: str, confidence: float, image: np.ndarray, bbox: tuple[int, int, int, int]) -> str:
+    def __call__(
+        self: Self,
+        modelname: str,
+        confidence: float,
+        image: np.ndarray,
+        bbox: tuple[int, int, int, int],
+    ) -> str:
         # solve the ncc
         ncc = self._ncc(image, bbox)
-        if ncc * confidence >= self._accuracy_threshold and self._last_model is not None:
+        if (
+            ncc * confidence >= self._accuracy_threshold
+            and self._last_model is not None
+        ):
             return self._last_model
 
         # get info for all models again
@@ -429,7 +494,7 @@ class Shift:
             var_attrs["accuracy"][c[0]] = ajd_acc
             # var_attrs["accuracy"][c[0]] = c[1]
             self._moments[c[0]].append(var_attrs["accuracy"][c[0]])
-            var_attrs["accuracy"][c[0]] = np.mean(self._moments[c[0]])
+            var_attrs["accuracy"][c[0]] = float(np.mean(list(self._moments[c[0]])))
 
         if self._solve_method == "greedy":
             # scale energy and latency to be 0 to 1 metrics
@@ -438,11 +503,22 @@ class Shift:
             accuracy = list(var_attrs["accuracy"].items())
 
             model_data = []
-            for (m, a), (_, e), (_, latency) in zip(accuracy, self._energy, self._latency):
+            for (m, a), (_, e), (_, latency) in zip(
+                accuracy,
+                self._energy,
+                self._latency,
+            ):
                 if a >= self._accuracy_threshold:
                     model_data.append((m, a, e, latency))
             if len(model_data) == 0:
-                model_data = [(m, a, e, lat) for (m, a), (_, e), (_, lat) in zip(accuracy, self._energy, self._latency)]
+                model_data = [
+                    (m, a, e, lat)
+                    for (m, a), (_, e), (_, lat) in zip(
+                        accuracy,
+                        self._energy,
+                        self._latency,
+                    )
+                ]
 
             # # use the knobs to determine the fitness of each model
             # fitness = [
@@ -450,18 +526,27 @@ class Shift:
             #     for (m, a), (_, e), (_, l) in zip(accuracy, energy, latency)
             # ]
             fitness = [
-                (m, a * self._knobs["accuracy"] + e * self._knobs["energy"] + lat * self._knobs["latency"]) for m, a, e, lat in model_data
+                (
+                    m,
+                    a * self._knobs["accuracy"]
+                    + e * self._knobs["energy"]
+                    + lat * self._knobs["latency"],
+                )
+                for m, a, e, lat in model_data
             ]
 
             # for a, e, l in zip(accuracy, energy, latency):
             #     print(f"{a[0]}: {a[1]}, {e[1]}, {l[1]}")
 
             # sort the fitnesses and return the best model
-            fitness = sorted(fitness, key=lambda x: x[1], reverse=True)
-            best_model = fitness[0][0]
+            # fitness = sorted(fitness, key=lambda x: x[1], reverse=True)
+            # best_model = fitness[0][0]
+            best_model = max(fitness, key=lambda x: x[1])[0]
         else:
             err_msg = "Optimal solve method not implemented"
             raise NotImplementedError(err_msg)
+
+        # make call to model loader to load the model
 
         self._last_model = best_model
         return best_model

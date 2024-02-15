@@ -11,25 +11,17 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
-# ruff: noqa: N801
-"""Module for implemenations on hardware."""
 from __future__ import annotations
 
-from typing_extensions import Self
 
-try:
-    from . import _jetson as jetson
-except ImportError:
+def get_mock_memory() -> tuple[int, int, int]:
+    """
+    Get the mock memory.
 
-    class jetson:  # type: ignore[no-redef]
-        """Mock class for Jetson implementation."""
+    Returns
+    -------
+    tuple[int, int, int]
+        The total memory, the free memory, and the used memory
 
-        def __getattr__(self: Self, name: str) -> None:
-            """Error message for Jetson."""
-            err_msg = "Jetson implementation not available."
-            raise NotImplementedError(err_msg)
-
-
-from . import _mock as mock
-
-__all__ = ["jetson", "mock"]
+    """
+    return 10000, 5000, 5000

@@ -184,9 +184,7 @@ class Shift:
 
         # assign attributes for image similarity
         self._last_image: np.ndarray | None = None
-        self._last_image_ncc: np.ndarray | None = None
-        self._last_bbox_roi: np.ndarray | None = None
-        self._last_bbox_ncc: np.ndarray | None = None
+        self._last_bbox: tuple[int, int, int, int] | None = None
 
         # state tracking for last returned model
         self._last_model: str | None = None
@@ -323,8 +321,9 @@ class Shift:
         image: np.ndarray,
         bbox_roi: tuple[int, int, int, int],
     ) -> float:
-        if self._last_image is None:
+        if self._last_image is None or self._last_bbox is None:
             self._last_image = image
+            self._last_bbox = sanitize_bbox(bbox_roi, image.shape[1], image.shape[0])
             return 0.0
         bbox_roi = sanitize_bbox(bbox_roi, image.shape[1], image.shape[0])
         bbox_ncc = ncc(
@@ -334,6 +333,7 @@ class Shift:
         )
         image_ncc = ncc(image, self._last_image, (112, 112))
         self._last_image = image
+        self._last_bbox = bbox_roi
         return max(bbox_ncc * image_ncc, 0.0)
 
     def _pregenerate(
@@ -496,7 +496,7 @@ class Shift:
             var_attrs["accuracy"][c[0]] = c[1]
             # var_attrs["accuracy"][c[0]] = c[1]
             self._moments[c[0]].append(var_attrs["accuracy"][c[0]])
-            var_attrs["accuracy"][c[0]] = np.mean(self._moments[c[0]])
+            var_attrs["accuracy"][c[0]] = float(np.mean(list(self._moments[c[0]])))
 
         if self._solve_method == "greedy":
             # scale energy and latency to be 0 to 1 metrics
@@ -540,12 +540,15 @@ class Shift:
             # for a, e, l in zip(accuracy, energy, latency):
             #     print(f"{a[0]}: {a[1]}, {e[1]}, {l[1]}")
 
-            best_model = max(fitness, key=lambda x: x[1])[0]
+            # sort the fitnesses and return the best model
             # fitness = sorted(fitness, key=lambda x: x[1], reverse=True)
             # best_model = fitness[0][0]
+            best_model = max(fitness, key=lambda x: x[1])[0]
         else:
             err_msg = "Optimal solve method not implemented"
             raise NotImplementedError(err_msg)
+
+        # make call to model loader to load the model
 
         self._last_model = best_model
         return best_model

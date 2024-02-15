@@ -43,6 +43,7 @@ def clamp(n: float, minval: float, maxval: float) -> int | float:
         The minimum value.
     maxval : float
         The maximum value.
+
     """
     if n < minval:
         return minval
@@ -67,6 +68,7 @@ def bbox_iou(
         The second bounding box (x1, y1, x2, y2)
     eps: float, optional
         A small value to prevent division by zero, by default 1e-7
+
     """
     b1_x1, b1_y1, b1_x2, b1_y2 = box1[0], box1[1], box1[2], box1[3]
     b2_x1, b2_y1, b2_x2, b2_y2 = box2[0], box2[1], box2[2], box2[3]
@@ -107,6 +109,7 @@ def compute_map(
     tuple[float, float]
         The mean average precision (mAP) between the ground truth and model output,
         and the average iou for detections.
+
     """
     average_precision = 0.0
     iou_vals = []
@@ -166,6 +169,7 @@ def scale_coords(
     -------
     tuple[int, int, int, int]
         A (x1, y1, x2, y2) bounding box in the s2 image size
+
     """
     x1, y1, x2, y2 = bbox  # Unpack the bounding box coordinates
 
@@ -209,6 +213,7 @@ def change_pair(
     -------
     tuple[int, int]
         The adjusted x/y pair.
+
     """
     c1, c2 = cords
     counter = 0
@@ -253,6 +258,7 @@ def sanitize_bbox(
     -------
     tuple[int, int, int, int]
         The sanitized bounding box.
+
     """
     x1, y1, x2, y2 = bbox
     x1 = max(x1, 0)
@@ -288,6 +294,7 @@ def ncc(
     -------
     float
         The normalized cross-correlation between the two images.
+
     """
     colorchannels = 3
     with contextlib.suppress(IndexError):
@@ -309,8 +316,5 @@ def ncc(
 
     return float(
         np.sum(image1_numerator * image2_numerator)
-        / (
-            np.sqrt(np.sum(image1_numerator**2))
-            * np.sqrt(np.sum(image2_numerator**2))
-        ),
+        / (np.sqrt(np.sum(image1_numerator**2)) * np.sqrt(np.sum(image2_numerator**2))),
     )

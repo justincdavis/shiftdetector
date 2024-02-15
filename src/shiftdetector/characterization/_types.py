@@ -43,6 +43,7 @@ class AbstractMeasure(ABC):
         Measure the data. Abstract method.
     reset()
         Reset the data.
+
     """
 
     def __init__(self: Self, interval: float = 0.05) -> None:
@@ -72,6 +73,7 @@ class AbstractMeasure(ABC):
         -------
         list[float]
             The data.
+
         """
         return self._data
 
@@ -84,6 +86,7 @@ class AbstractMeasure(ABC):
         -------
         float
             The measurement.
+
         """
         err_msg = "Not implemented in abstract class."
         raise NotImplementedError(err_msg)
@@ -113,6 +116,7 @@ class AbstractModel(ABC):
         Run the model on the input data.
     __call__()
         Run the model on the input data.
+
     """
 
     @abstractmethod
@@ -129,6 +133,7 @@ class AbstractModel(ABC):
         -------
         tuple[int, int]
             The input size of the model.
+
         """
         err_msg = "Not implemented in abstract class."
         raise NotImplementedError(err_msg)
@@ -147,6 +152,7 @@ class AbstractModel(ABC):
         -------
         np.ndarray
             The preprocessed data.
+
         """
         err_msg = "Not implemented in abstract class."
         raise NotImplementedError(err_msg)
@@ -155,7 +161,7 @@ class AbstractModel(ABC):
     def predict(
         self: Self,
         data: np.ndarray,
-    ) -> list[tuple[tuple[int, int, int, int], int, int]]:
+    ) -> tuple[tuple[int, int, int, int], int]:
         """
         Predict on the input data.
 
@@ -166,8 +172,9 @@ class AbstractModel(ABC):
 
         Returns
         -------
-        list[tuple[int, tuple[int, int, int, int]]]
-            The output data as a list containing the bounding box, class, and confidence score.
+        tuple[tuple[int, int, int, int], int]
+            The output data, a bounding box and a score.
+
         """
         err_msg = "Not implemented in abstract class."
         raise NotImplementedError(err_msg)
@@ -177,7 +184,7 @@ class AbstractModel(ABC):
         data: np.ndarray,
         *,
         preprocessed: bool | None = None,
-    ) -> list[tuple[tuple[int, int, int, int], int, int]]:
+    ) -> tuple[tuple[int, int, int, int], int]:
         """
         Run the model on the input data.
 
@@ -191,8 +198,9 @@ class AbstractModel(ABC):
 
         Returns
         -------
-        list[tuple[tuple[int, int, int, int], int, int]]
-            The output data.
+        tuple[tuple[int, int, int, int], int]
+            The output data, a bounding box and a score.
+
         """
         if preprocessed is None:
             preprocessed = False

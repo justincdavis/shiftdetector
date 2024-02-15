@@ -58,6 +58,7 @@ def measure_load(
         The number of iterations to measure, by default 20
     steady_state_sample_time : float, optional
         The time to sample the steady state power and memory, by default 10.0 seconds
+
     """
     import_handle()
 

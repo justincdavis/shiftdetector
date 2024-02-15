@@ -66,6 +66,7 @@ def _create_graph(
     -------
     nx.Graph | nx.DiGraph
         The graph created from the edges and weights.
+
     """
 
     def default_graph() -> nx.Graph:
@@ -136,6 +137,7 @@ def get_node(modelname: str, conf_val: float, num_bins: int) -> str:
     -------
     str
         The string representation of the node.
+
     """
     bin_val = math.ceil(conf_val * num_bins) / num_bins
     return f"{modelname}_{bin_val}"
@@ -206,6 +208,7 @@ def build_graph(
     ------
     ValueError
         If an invalid metric is passed.
+
     """
     if metric not in ["conf", "iou", "energy", "accuracy"]:
         err_msg = f"Invalid metric: {metric}"

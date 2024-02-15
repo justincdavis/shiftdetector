@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING, Callable
 import cv2
 import numpy as np
 
-from shiftdetector.common import compute_map, scale_coords
+from shiftdetector.common import bbox_iou, scale_coords
 
 from ._graph import build_graph
 from ._helpers import get_power_draw, get_steady_state
@@ -43,10 +43,9 @@ def _characterize(
     steady_state_power: float,
     image_dir: Path,
     image_names: list[str],
-    ground_truth: list[list[tuple[tuple[int, int, int, int], int]]],
+    ground_truth: list[tuple[int, int, int, int]],
     num_power_iterations: int = 100,
     dummy_image_size: tuple[int, int, int] = (640, 480, 3),
-    map_iou_threshold: float = 0.5,
     num_bins: int = 10,
     *,
     use_cached: bool | None = None,
@@ -74,15 +73,13 @@ def _characterize(
         The directory containing the images to use for characterization.
     image_names : list[str]
         The list of image names to use for characterization.
-    ground_truth : list[list[tuple[tuple[int, int, int, int], int]]]
+    ground_truth : list[tuple[tuple[int, int, int, int], int]]
         The ground truth bounding boxes and classes for the images.
         Bounding boxes are assumed to be in the x1, y1, x2, y2 format.
     num_power_iterations : int, optional
         The number of power iterations to take, by default 100
     dummy_image_size : tuple[int, int, int], optional
         The size of the dummy image to use, by default (640, 480, 3)
-    map_iou_threshold : float, optional
-        The IoU threshold to use for computing mAP, by default 0.5
     num_bins : int, optional
         The number of bins to use for binning the data, by default 10
     use_cached : bool, optional
@@ -97,6 +94,7 @@ def _characterize(
         If bins and indices cannot be computed.
         If confidence value is greater than bin key.
         If confidence value is less than bin key.
+
     """
     if use_cached is None:
         use_cached = True
@@ -137,17 +135,15 @@ def _characterize(
         t_preprocess = t1 - t0
         t_inference = t2 - t1
 
-        outputs = [
-            (scale_coords(bbox, model.input_size, image.shape[:2]), class_id, score)
-            for bbox, class_id, score in outputs
-        ]
-        accuracy, iou, conf = compute_map(gt, outputs, iou_threshold=map_iou_threshold)
+        bbox, score = outputs[0], outputs[1]
+        bbox = scale_coords(bbox, model.input_size, image.shape[:2])
+        iou = bbox_iou(bbox, gt)
 
         image_stats[image_name]["preprocess"] = t_preprocess
         image_stats[image_name]["time"] = t_inference
-        image_stats[image_name]["accuracy"] = accuracy
+        image_stats[image_name]["accuracy"] = iou
         image_stats[image_name]["iou"] = iou
-        image_stats[image_name]["conf"] = conf
+        image_stats[image_name]["conf"] = score
         image_stats[image_name]["energy"] = t_inference * energy
 
     fieldnames = list(image_stats[image_names[0]].keys())
@@ -249,11 +245,10 @@ def characterize(
     get_memory: Callable[[], tuple[int, int, int]],
     image_dir: Path,
     image_files: list[str],
-    ground_truth: list[list[tuple[tuple[int, int, int, int], int]]],
+    ground_truth: list[tuple[int, int, int, int]],
     num_power_iterations: int = 100,
     steady_state_sample_time: float = 10.0,
     dummy_image_size: tuple[int, int, int] = (640, 480, 3),
-    map_iou_threshold: float = 0.5,
     num_bins: int = 10,
     graph_metric: str = "conf",
     min_connects: int = 1,
@@ -305,8 +300,6 @@ def characterize(
         The time to sample the steady state power and memory, by default 10.0 seconds
     dummy_image_size : tuple[int, int, int], optional
         The size of the dummy image to use, by default (640, 480, 3)
-    map_iou_threshold : float, optional
-        The IoU threshold to use for computing mAP, by default 0.5
     num_bins : int, optional
         The number of bins to use for binning the data, by default 10
     graph_metric : str, optional
@@ -347,6 +340,7 @@ def characterize(
     measure_load_stats : bool, optional
         Whether to measure the load time, energy, and memory usage of the model.
         By default None, which will measure the load time, energy, and memory usage.
+
     """
     if characterize_models is None:
         characterize_models = True
@@ -388,7 +382,6 @@ def characterize(
                 num_power_iterations=num_power_iterations,
                 dummy_image_size=dummy_image_size,
                 use_cached=use_cached_energy,
-                map_iou_threshold=map_iou_threshold,
                 num_bins=num_bins,
             )
             del model

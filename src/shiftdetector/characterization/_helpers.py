@@ -44,6 +44,7 @@ def get_steady_state(
     dict[str, str]
         The steady state power and memory usage.
         Keys are "power_draw", "total_mem", "free_mem", and "used_mem".
+
     """
     # sample power
     power_reader.start()
@@ -99,6 +100,7 @@ def get_power_draw(
     -------
     float
         The power draw of the model.
+
     """
     dummy_image: np.ndarray = np.ones(image_size, dtype=np.uint8)
     tensor = model.preprocess(dummy_image)

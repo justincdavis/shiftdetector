@@ -44,11 +44,12 @@ from ._graph import build_graph
 from ._helpers import get_power_draw, get_steady_state
 from ._load import measure_load
 from ._method import characterize
-from ._types import AbstractMeasure, AbstractModel
+from ._types import AbstractMeasure, AbstractModel, DummyModel
 
 __all__ = [
     "AbstractMeasure",
     "AbstractModel",
+    "DummyModel",
     "build_graph",
     "characterize",
     "get_power_draw",

@@ -28,7 +28,7 @@ from typing_extensions import Self
 from .common import ncc, sanitize_bbox
 
 
-class Shift:
+class ShiftScheduler:
     """
     Class for the shift algorithm.
 

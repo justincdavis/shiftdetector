@@ -18,6 +18,7 @@ from abc import ABC, abstractmethod
 from threading import Condition, Thread
 from typing import TYPE_CHECKING
 
+from numpy import mean as np_mean
 from typing_extensions import Self
 
 if TYPE_CHECKING:
@@ -108,6 +109,11 @@ class AbstractModel(ABC):
     """
     Abstract class for representing a model for characterization.
 
+    Attributes
+    ----------
+    input_size : tuple[int, int]
+        The input size of the model.
+
     Methods
     -------
     preprocess()
@@ -178,6 +184,115 @@ class AbstractModel(ABC):
         """
         err_msg = "Not implemented in abstract class."
         raise NotImplementedError(err_msg)
+
+    def __call__(
+        self: Self,
+        data: np.ndarray,
+        *,
+        preprocessed: bool | None = None,
+    ) -> tuple[tuple[int, int, int, int], int]:
+        """
+        Run the model on the input data.
+
+        Parameters
+        ----------
+        data : np.ndarray
+            The input data.
+        preprocessed : bool, optional
+            Whether the input data is preprocessed, by default None.
+            If None, the input data will be preprocessed.
+
+        Returns
+        -------
+        tuple[tuple[int, int, int, int], int]
+            The output data, a bounding box and a score.
+
+        """
+        if preprocessed is None:
+            preprocessed = False
+
+        if not preprocessed:
+            data = self.preprocess(data)
+
+        return self.predict(data)
+
+
+class DummyModel(AbstractModel):
+    """
+    A dummy model for testing/simulation purposes.
+
+    This class is a dummy model for testing/simulation purposes. It is used to
+    test the SHIFT methodology in a simulated environment.
+
+    Attributes
+    ----------
+    input_size : tuple[int, int]
+        The input size of the model.
+
+    Methods
+    -------
+    preprocess()
+        Preprocess the input data.
+    predict()
+        Run the model on the input data.
+    __call__()
+        Run the model on the input data.
+
+    """
+
+    def __init__(self: Self) -> None:
+        self._input_size = (112, 112)
+
+    @property
+    def input_size(self: Self) -> tuple[int, int]:
+        """
+        Get the input size of the model.
+
+        Returns
+        -------
+        tuple[int, int]
+            The input size of the model.
+
+        """
+        return self._input_size
+
+    def preprocess(self: Self, data: np.ndarray) -> np.ndarray:
+        """
+        Preprocess the input data.
+
+        Parameters
+        ----------
+        data : np.ndarray
+            The input data.
+
+        Returns
+        -------
+        np.ndarray
+            The preprocessed data.
+
+        """
+        return data
+
+    def predict(
+        self: Self,
+        data: np.ndarray,
+    ) -> tuple[tuple[int, int, int, int], int]:
+        """
+        Predict on the input data.
+
+        Parameters
+        ----------
+        data : np.ndarray
+            The input data.
+
+        Returns
+        -------
+        tuple[tuple[int, int, int, int], int]
+            The output data, a bounding box and a score.
+
+        """
+        high_val = int(float(np_mean(data)))
+        return (0, 0, high_val, high_val), 0
 
     def __call__(
         self: Self,

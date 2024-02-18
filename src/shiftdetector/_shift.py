@@ -19,6 +19,7 @@ from ._loader import AbstractModelLoader, DynamicModelLoader, SimulatedModelLoad
 from ._scheduler import ShiftScheduler
 
 if TYPE_CHECKING:
+    import numpy as np
     from typing_extensions import Self
 
     from .characterization import AbstractModel
@@ -122,6 +123,9 @@ class Shift:
             err_msg = "The sim_data parameter must be provided if simulated is True."
             raise ValueError(err_msg)
         self._sim_data = sim_data
+        # run validation on the provided sim_data
+        if self._simulated:
+            self._validate_sim_data()
 
         self._dml: AbstractModelLoader | None = None
         if not self._simulated:
@@ -137,3 +141,92 @@ class Shift:
         if self._dml is None:
             err_msg = "The model loader has not been intialized. Internal error."
             raise ValueError(err_msg)
+
+    def _validate_sim_data(self: Self) -> bool:
+        """
+        Validate the simulated data.
+
+        Returns
+        -------
+        bool
+            True if the simulated data is valid, False otherwise.
+
+        Raises
+        ------
+        ValueError
+            If the simulated data is not valid.
+        """
+        correct, code, subcode = self._validate_sim_data_helper()
+        if not correct:
+            if code == 1:
+                err_msg = "The model names in the sim_data dict are not strings."
+            elif code == 2:
+                err_msg = "The data in the sim_data dict is not a list."
+            elif code == 3:
+                err_msg = "The data sizes in the sim_data dict are not the same."
+            elif code == 4:
+                err_msg = "The bounding box in the sim_data dict is not a tuple or does not have 4 elements."
+                err_msg += f" The error occurred at model {subcode[0]} and data index {subcode[1]}."
+            elif code == 5:
+                err_msg = "The score in the sim_data dict is not a float."
+                err_msg += f" The error occurred at model {subcode[0]} and data index {subcode[1]}."
+            else:
+                err_msg = "An unknown error occurred."
+            raise ValueError(err_msg)
+        return True
+
+    def _validate_sim_data_helper(self: Self) -> tuple[bool, int, tuple[int, int] | None]:
+        """
+        Validate the simulated data.
+
+        Returns
+        -------
+        bool
+            True if the simulated data is valid, False otherwise.
+        int
+            The error code.
+        tuple[int, int] | None
+            The subcode for the error. The model and date line index where the error occurred.
+        """
+        # correct types
+        for model, data in self._sim_data.items():
+            if not isinstance(model, str):
+                return False, 1, None  # model names are not strings
+            if not isinstance(data, list):
+                return False, 2, None  # data is not a list
+
+        # correct sizes
+        data_sizes = set()
+        for model, data in self._sim_data.items():
+            data_sizes.add(len(data))
+        if len(data_sizes) > 1:
+            return False, 3, None
+    
+        # correct types and sizes
+        for idx1, data in enumerate(self._sim_data.values()):
+            for idx2, (box, score) in enumerate(data):
+                if not isinstance(box, tuple) or len(box) != 4:
+                    return False, 4, (idx1, idx2)
+                if not isinstance(score, float):
+                    return False, 5, (idx1, idx2)
+        
+        return True, 0, None
+
+    def _call(self: Self, image: np.ndarray, bbox: tuple[int, int, int, int], conf: float) -> tuple[str, tuple[int, int, int, int], float]:
+        """
+        Call the SHIFT methodology and perform the actual scheduling.
+        
+        Parameters
+        ----------
+        image : np.ndarray
+            The most recent image.
+        bbox : tuple[int, int, int, int]
+            The last detected bounding box.
+        conf : float
+            The last confidence score.
+            
+        Returns
+        -------
+        tuple[str, tuple[int, int, int, int], float]
+            The model name, the bounding box, and the confidence score.
+        """

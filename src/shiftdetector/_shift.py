@@ -13,6 +13,9 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 from __future__ import annotations
 
+import os
+import json
+from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
 from ._loader import AbstractModelLoader, DynamicModelLoader, SimulatedModelLoader
@@ -141,6 +144,19 @@ class Shift:
         if self._dml is None:
             err_msg = "The model loader has not been intialized. Internal error."
             raise ValueError(err_msg)
+        
+        # tracking info
+        most_accurate_model: str | None = None
+        highest_accuracy: float = 0.0
+        for root, dirs, _ in os.walk(stats_dir):
+            for directory in dirs:
+                dirpath = Path(root) / directory
+                with Path.open(dirpath / f"{directory}.json") as f:
+                    data = json.load(f)
+                    if most_accurate_model is None or float(data["accuracy"]["mean"]) > highest_accuracy:
+                        most_accurate_model = directory
+                        highest_accuracy = float(data["accuracy"]["mean"])
+        self._last_model: str = most_accurate_model
 
     def _validate_sim_data(self: Self) -> bool:
         """
@@ -212,7 +228,7 @@ class Shift:
         
         return True, 0, None
 
-    def _call(self: Self, image: np.ndarray, bbox: tuple[int, int, int, int], conf: float) -> tuple[str, tuple[int, int, int, int], float]:
+    def _call(self: Self, image: np.ndarray) -> tuple[str, tuple[int, int, int, int], float]:
         """
         Call the SHIFT methodology and perform the actual scheduling.
         
@@ -220,13 +236,18 @@ class Shift:
         ----------
         image : np.ndarray
             The most recent image.
-        bbox : tuple[int, int, int, int]
-            The last detected bounding box.
-        conf : float
-            The last confidence score.
             
         Returns
         -------
         tuple[str, tuple[int, int, int, int], float]
             The model name, the bounding box, and the confidence score.
         """
+        if self._simulated:
+            return self._call_simulated(image)
+        
+        model = self._dml.get_model(self._last_model)
+        tensor = model.preprocess(image)
+        bbox, score = model(tensor)
+
+        new_model = self._scheduler(self._last_model, score, image, bbox)
+        in_memory = self._dml.request(new_model)

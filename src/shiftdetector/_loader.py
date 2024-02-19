@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import contextlib
 from abc import ABC, abstractmethod
-from threading import Thread
+from threading import Thread, Condition
 from typing import TYPE_CHECKING, Callable
 
 from typing_extensions import Self
@@ -66,7 +66,7 @@ class AbstractModelLoader(ABC):
         raise NotImplementedError(err_msg)
 
     @abstractmethod
-    def request(self: Self, modelname: str) -> bool:
+    def request(self: Self, modelname: str, *, wait: bool | None = None) -> bool:
         """
         Request a model to be loaded into memory.
 
@@ -74,6 +74,8 @@ class AbstractModelLoader(ABC):
         ----------
         modelname: str
             The name of the model to request.
+        wait: bool, optional
+            If True, wait for the model to be loaded.
 
         Returns
         -------
@@ -128,6 +130,7 @@ class _ModelLoaderThread:
         self._model_creation_func = model_creation_func
         self._model: AbstractModel | None = None
         self._thread: Thread | None = None
+        self._condition: Condition | None = None
         self._present = False
 
     def __del__(self: Self) -> None:
@@ -159,12 +162,32 @@ class _ModelLoaderThread:
 
         """
         return self._present
+    
+    @property
+    def loading(self: Self) -> bool:
+        """
+        Check if the model is loading.
+
+        Returns
+        -------
+        bool
+            True if the model is loading, False otherwise.
+
+        """
+        return self._thread is not None and self._thread.is_alive()
 
     def load(self: Self) -> None:
         """Load the model."""
         if self._model is None and self._thread is None:
             self._thread = Thread(target=self._load_model)
+            self._condition = Condition()
             self._thread.start()
+    
+    def wait(self: Self) -> None:
+        """Wait for the model to be loaded."""
+        if self._thread is not None and self._thread.is_alive() and not self._present:
+            with self._condition:
+                self._condition.wait()
 
     def unload(self: Self) -> None:
         """Unload the model."""
@@ -181,6 +204,8 @@ class _ModelLoaderThread:
         """Load the model."""
         self._model = self._model_creation_func()
         self._present = True
+        with self._condition:
+            self._condition.notify_all()
 
 
 class DynamicModelLoader(AbstractModelLoader):
@@ -246,7 +271,7 @@ class DynamicModelLoader(AbstractModelLoader):
             if model_loader.present
         ]
 
-    def request(self: Self, modelname: str) -> bool:
+    def request(self: Self, modelname: str, *, wait: bool | None = None) -> bool:
         """
         Request a model to be loaded into memory.
 
@@ -260,6 +285,8 @@ class DynamicModelLoader(AbstractModelLoader):
         bool
             True if the model is present, False otherwise.
             If False, the model will start to be loaded.
+        wait: bool, optional
+            If True, wait for the model to be loaded.
 
         Raises
         ------
@@ -304,7 +331,11 @@ class DynamicModelLoader(AbstractModelLoader):
                 recouped_memory += self._model_costs[oldest_model]
                 self._model_loaders[oldest_model].unload()
 
-        self._model_loaders[modelname].load()
+        if not self._model_loaders[modelname].loading:
+            self._model_loaders[modelname].load()
+
+            if wait:
+                self._model_loaders[modelname].wait()
         return False
 
     def get_model(self: Self, modelname: str) -> AbstractModel | None:

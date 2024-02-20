@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import contextlib
 
-import cv2
+import cv2  # type: ignore[import-untyped]
 import numpy as np
 
 

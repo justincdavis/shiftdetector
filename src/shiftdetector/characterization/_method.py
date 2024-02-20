@@ -20,7 +20,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
-import cv2
+import cv2  # type: ignore[import-untyped]
 import numpy as np
 
 from shiftdetector.common import bbox_iou, scale_coords

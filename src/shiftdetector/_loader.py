@@ -15,12 +15,10 @@ from __future__ import annotations
 
 import contextlib
 from abc import ABC, abstractmethod
-from threading import Thread, Condition
+from threading import Condition, Thread
 from typing import TYPE_CHECKING, Callable
 
 from typing_extensions import Self
-
-from .characterization import DummyModel
 
 if TYPE_CHECKING:
     from .characterization import AbstractModel
@@ -117,6 +115,8 @@ class _ModelLoaderThread:
         Load the model
     unload()
         Unload the model
+    wait()
+        Wait for the model to be loaded
 
     """
 
@@ -162,7 +162,7 @@ class _ModelLoaderThread:
 
         """
         return self._present
-    
+
     @property
     def loading(self: Self) -> bool:
         """
@@ -179,13 +179,16 @@ class _ModelLoaderThread:
     def load(self: Self) -> None:
         """Load the model."""
         if self._model is None and self._thread is None:
-            self._thread = Thread(target=self._load_model)
             self._condition = Condition()
+            self._thread = Thread(target=self._load_model)
             self._thread.start()
-    
+
     def wait(self: Self) -> None:
         """Wait for the model to be loaded."""
         if self._thread is not None and self._thread.is_alive() and not self._present:
+            if self._condition is None:
+                err_msg = "threading.Condition did not get allocated. "
+                raise RuntimeError(err_msg)
             with self._condition:
                 self._condition.wait()
 
@@ -204,8 +207,89 @@ class _ModelLoaderThread:
         """Load the model."""
         self._model = self._model_creation_func()
         self._present = True
+        if self._condition is None:
+            err_msg = "threading.Condition did not get allocated. "
+            raise RuntimeError(err_msg)
         with self._condition:
             self._condition.notify_all()
+
+class _SimModel:
+    def __init__(self: Self, modelname: str, time_to_load: float, model_creation_func: Callable[[], AbstractModel] | None = None) -> None:
+        self._modelname = modelname
+        self._model_creation_func = model_creation_func
+        self._time_to_load = time_to_load
+        self._model: AbstractModel | None = None
+        self._present = False
+        self._loading = False
+        self._time_since_load = 0.0
+
+    @property
+    def model(self: Self) -> AbstractModel | None:
+        """
+        Get the model.
+
+        Returns
+        -------
+        type[AbstractModel] | None
+            The model
+
+        """
+        return self._model
+
+    @property
+    def present(self: Self) -> bool:
+        """
+        Check if the model is present.
+
+        Returns
+        -------
+        bool
+            True if the model is present, False otherwise.
+
+        """
+        return self._present
+
+    @property
+    def loading(self: Self) -> bool:
+        """
+        Check if the model is loading.
+
+        Returns
+        -------
+        bool
+            True if the model is loading, False otherwise.
+
+        """
+        return self._loading
+
+    def load(self: Self) -> None:
+        """Load the model."""
+        if self._present or self._loading:
+            return
+        self._loading = True
+        self._time_since_load = 0.0
+        self._present = False
+
+    def unload(self: Self) -> None:
+        """Unload the model."""
+        self._loading = False
+        self._present = False
+
+    def sim_propagate(self: Self, elapsed: float) -> None:
+        """
+        Simulate the propagation of time.
+
+        Parameters
+        ----------
+        elapsed: float
+            The time elapsed since last call.
+
+        """
+        if self._loading:
+            self._time_since_load += elapsed
+            if self._time_since_load >= self._time_to_load:
+                self._loading = False
+                self._present = True
 
 
 class DynamicModelLoader(AbstractModelLoader):
@@ -279,14 +363,14 @@ class DynamicModelLoader(AbstractModelLoader):
         ----------
         modelname: str
             The name of the model to request.
+        wait: bool, optional
+            If True, wait for the model to be loaded.
 
         Returns
         -------
         bool
             True if the model is present, False otherwise.
             If False, the model will start to be loaded.
-        wait: bool, optional
-            If True, wait for the model to be loaded.
 
         Raises
         ------
@@ -336,6 +420,7 @@ class DynamicModelLoader(AbstractModelLoader):
 
             if wait:
                 self._model_loaders[modelname].wait()
+                return True
         return False
 
     def get_model(self: Self, modelname: str) -> AbstractModel | None:
@@ -370,6 +455,7 @@ class SimulatedModelLoader(AbstractModelLoader):
         self: Self,
         get_memory: Callable[[], tuple[float, float, float]],
         model_data: list[tuple[str, Callable[[], AbstractModel], float]],
+        model_load_times: dict[str, float],
     ) -> None:
         """
         Create the simulated model loader.
@@ -382,17 +468,25 @@ class SimulatedModelLoader(AbstractModelLoader):
         model_data: list[tuple[str, Callable[[], AbstractModel]]]
             A list of tuples of model name, function to create the model, and the cost to load the model into memory.
             Same type for static type analysis and parity, but the loading functions are not used.
+        model_load_times: dict[str, float]
+            A dictionary of model names and the time it takes to load the model into memory.
 
         """
         self._get_memory = get_memory
-        self._model_loaders: dict[str, AbstractModel] = {
-            modelname: DummyModel() for modelname, _, _ in model_data
+        self._model_load_times = model_load_times
+        self._model_loaders: dict[str, _SimModel] = {
+            modelname: _SimModel(modelname, self._model_load_times[modelname], model_creation_func)
+            for modelname, model_creation_func, _ in model_data
         }
         self._model_costs: dict[str, float] = {
             modelname: cost for modelname, _, cost in model_data
         }
         self._counter = 0
+        _, available_memory, _ = self._get_memory()
+        self._virtual_memory = available_memory
+        self._used_memory = 0.0
         self._model_counters: dict[str, int] = dict.fromkeys(self._model_loaders, 0)
+        self._model_timing: dict[str, float] = dict.fromkeys(self._model_loaders, -1.0)
 
     def get_available_models(self: Self) -> list[str]:
         """
@@ -408,7 +502,7 @@ class SimulatedModelLoader(AbstractModelLoader):
             modelname for modelname, present in self._model_loaders.items() if present
         ]
 
-    def request(self: Self, modelname: str) -> bool:
+    def request(self: Self, modelname: str, *, wait: bool | None = None) -> bool:
         """
         Request a model to be loaded into memory.
 
@@ -416,6 +510,8 @@ class SimulatedModelLoader(AbstractModelLoader):
         ----------
         modelname: str
             The name of the model to request.
+        wait: bool, optional
+            If True, wait for the model to be loaded.
 
         Returns
         -------
@@ -423,11 +519,57 @@ class SimulatedModelLoader(AbstractModelLoader):
             True if the model is present, False otherwise.
             If False, the model will start to be loaded.
 
+        Raises
+        ------
+        ValueError
+            If the modelname is was not submitted with a model creation function.
+        RuntimeError
+            If no models are present, but memory is still required.
+            If the model attempting to be loaded exceeds system memory this can occur.
+
         """
+        if modelname not in self._model_loaders:
+            err_msg = (
+                f"Model {modelname} was not submitted with a model creation function."
+            )
+            raise ValueError(err_msg)
+
         self._counter += 1
         self._model_counters[modelname] = self._counter
 
-        return True
+        is_present = self._model_loaders[modelname].present
+        if is_present:
+            return True
+
+        available_memory = self._virtual_memory - self._used_memory
+        if available_memory < self._model_costs[modelname]:
+            memory_required = self._model_costs[modelname] - available_memory
+            recouped_memory = 0.0
+            while recouped_memory < memory_required:
+                oldest_model: str | None = None
+                for modelname, counter in self._model_counters.items():
+                    if (
+                        oldest_model is None
+                        or counter < self._model_counters[oldest_model]
+                    ) and self._model_loaders[modelname].present:
+                        oldest_model = modelname
+                if oldest_model is None:
+                    # right now raise a runtime error, BUT
+                    # could just return False and not load the model if this occurs
+                    err_msg = "No models are present, but memory is still required."
+                    err_msg += " If the model attempting to be loaded exceeds system memory this can occur."
+                    raise RuntimeError(err_msg)
+                recouped_memory += self._model_costs[oldest_model]
+                self._model_loaders[oldest_model].unload()
+
+        if not self._model_loaders[modelname].loading:
+            self._model_loaders[modelname].load()
+
+            if wait:
+                # sim_propagate the time to load the model + 1
+                self._model_loaders[modelname].sim_propagate(self._model_load_times[modelname] + 1)
+                return True
+        return False
 
     def get_model(self: Self, modelname: str) -> AbstractModel | None:
         """
@@ -439,8 +581,8 @@ class SimulatedModelLoader(AbstractModelLoader):
             The model
 
         """
-        return self._model_loaders[modelname]
-    
+        return self._model_loaders[modelname].model
+
     def sim_propagate(self: Self, elapsed: float) -> None:
         """
         Simulate the propagation of time.
@@ -451,4 +593,6 @@ class SimulatedModelLoader(AbstractModelLoader):
             The time elapsed
 
         """
-        pass
+        for model_loader in self._model_loaders.values():
+            model_loader.sim_propagate(elapsed)
+

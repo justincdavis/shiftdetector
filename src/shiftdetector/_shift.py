@@ -146,8 +146,14 @@ class Shift:
             raise ValueError(err_msg)
         
         # tracking info
+        # =============
+        # simulated tracking info (always allocated)
+        self._sim_counter: int = 0
+        self._model_loadtimes: dict[str, float] = {model: 0.0 for model, _, _ in model_data}
+        # general tracking info
         most_accurate_model: str | None = None
         highest_accuracy: float = 0.0
+        # load data from model characterization
         for root, dirs, _ in os.walk(stats_dir):
             for directory in dirs:
                 dirpath = Path(root) / directory
@@ -156,6 +162,7 @@ class Shift:
                     if most_accurate_model is None or float(data["accuracy"]["mean"]) > highest_accuracy:
                         most_accurate_model = directory
                         highest_accuracy = float(data["accuracy"]["mean"])
+                    self._model_loadtimes[directory] = float(data["loading"]["mean"])
         self._last_model: str = most_accurate_model
 
     def _validate_sim_data(self: Self) -> bool:
@@ -228,7 +235,31 @@ class Shift:
         
         return True, 0, None
 
-    def _call(self: Self, image: np.ndarray) -> tuple[str, tuple[int, int, int, int], float]:
+    def _call_simulated(self: Self, image: np.ndarray) -> tuple[tuple[int, int, int, int], float]:
+        """
+        Call the SHIFT methodology in a simulated environment.
+
+        Parameters
+        ----------
+        image : np.ndarray
+            The most recent image.
+
+        Returns
+        -------
+        tuple[tuple[int, int, int, int], float]
+            The bounding box, and the confidence score.
+        """
+        bbox, score = self._sim_data[self._last_model][self._sim_counter]
+        model_runtime = self._model_loadtimes[self._last_model]
+
+        self._dml.sim_propagate(model_runtime)
+
+        new_model = self._scheduler(self._last_model, score, image, bbox)
+
+        self._sim_counter += 1
+        return bbox, score
+
+    def _call(self: Self, image: np.ndarray) -> tuple[tuple[int, int, int, int], float]:
         """
         Call the SHIFT methodology and perform the actual scheduling.
         
@@ -239,15 +270,35 @@ class Shift:
             
         Returns
         -------
-        tuple[str, tuple[int, int, int, int], float]
-            The model name, the bounding box, and the confidence score.
-        """
-        if self._simulated:
-            return self._call_simulated(image)
-        
+        tuple[tuple[int, int, int, int], float]
+            The bounding box, and the confidence score.
+        """        
         model = self._dml.get_model(self._last_model)
         tensor = model.preprocess(image)
         bbox, score = model(tensor)
 
         new_model = self._scheduler(self._last_model, score, image, bbox)
         in_memory = self._dml.request(new_model)
+
+        if in_memory:
+            self._last_model = new_model
+
+        return new_model, bbox, score
+
+    def __call__(self: Self, image: np.ndarray) -> tuple[tuple[int, int, int, int], float]:
+        """
+        Call the SHIFT methodology.
+
+        Parameters
+        ----------
+        image : np.ndarray
+            The most recent image.
+
+        Returns
+        -------
+        tuple[tuple[int, int, int, int], float]
+            The bounding box, and the confidence score.
+        """
+        if self._simulated:
+            return self._call_simulated(image)
+        return self._call(image)

@@ -440,3 +440,15 @@ class SimulatedModelLoader(AbstractModelLoader):
 
         """
         return self._model_loaders[modelname]
+    
+    def sim_propagate(self: Self, elapsed: float) -> None:
+        """
+        Simulate the propagation of time.
+
+        Parameters
+        ----------
+        elapsed: float
+            The time elapsed
+
+        """
+        pass

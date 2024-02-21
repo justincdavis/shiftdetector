@@ -167,7 +167,7 @@ class AbstractModel(ABC):
     def predict(
         self: Self,
         data: np.ndarray,
-    ) -> tuple[tuple[int, int, int, int], int]:
+    ) -> tuple[tuple[int, int, int, int], float]:
         """
         Predict on the input data.
 
@@ -190,7 +190,7 @@ class AbstractModel(ABC):
         data: np.ndarray,
         *,
         preprocessed: bool | None = None,
-    ) -> tuple[tuple[int, int, int, int], int]:
+    ) -> tuple[tuple[int, int, int, int], float]:
         """
         Run the model on the input data.
 

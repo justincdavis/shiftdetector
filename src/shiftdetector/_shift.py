@@ -134,7 +134,9 @@ class Shift(AbstractModel):
         # =============
         # simulated tracking info (always allocated)
         self._sim_counter: int = 0
-        self._model_loadtimes: dict[str, float] = {model: 0.0 for model, _, _ in model_data}
+        self._model_loadtimes: dict[str, float] = {
+            model: 0.0 for model, _, _ in model_data
+        }
         # general tracking info
         most_accurate_model: str | None = None
         highest_accuracy: float = 0.0
@@ -144,7 +146,10 @@ class Shift(AbstractModel):
                 dirpath = Path(root) / directory
                 with Path.open(dirpath / f"{directory}.json") as f:
                     data = json.load(f)
-                    if most_accurate_model is None or float(data["accuracy"]["mean"]) > highest_accuracy:
+                    if (
+                        most_accurate_model is None
+                        or float(data["accuracy"]["mean"]) > highest_accuracy
+                    ):
                         most_accurate_model = directory
                         highest_accuracy = float(data["accuracy"]["mean"])
                     self._model_loadtimes[directory] = float(data["loading"]["mean"])
@@ -195,16 +200,24 @@ class Shift(AbstractModel):
                 err_msg = "The data sizes in the sim_data dict are not the same."
             elif code == SimValidation.BBOX_TYPE:
                 err_msg = "The bounding box in the sim_data dict is not a tuple or does not have 4 elements."
-                err_msg += f" The error occurred at model {subcode[0]} and data index {subcode[1]}."
+                if subcode is None:
+                    err_msg += " The error occurred at an unknown model and data index."
+                else:
+                    err_msg += f" The error occurred at model {subcode[0]} and data index {subcode[1]}."
             elif code == SimValidation.SCORE_TYPE:
                 err_msg = "The score in the sim_data dict is not a float."
-                err_msg += f" The error occurred at model {subcode[0]} and data index {subcode[1]}."
+                if subcode is None:
+                    err_msg += " The error occurred at an unknown model and data index."
+                else:
+                    err_msg += f" The error occurred at model {subcode[0]} and data index {subcode[1]}."
             else:
                 err_msg = "An unknown error occurred."
             raise ValueError(err_msg)
         return True
 
-    def _validate_sim_data_helper(self: Self) -> tuple[bool, int, tuple[int, int] | None]:
+    def _validate_sim_data_helper(
+        self: Self,
+    ) -> tuple[bool, SimValidation, tuple[int, int] | None]:
         """
         Validate the simulated data.
 
@@ -217,7 +230,14 @@ class Shift(AbstractModel):
         tuple[int, int] | None
             The subcode for the error. The model and date line index where the error occurred.
 
+        Raises
+        ------
+        ValueError
+            If the simulated data is None.
         """
+        if self._sim_data is None:
+            err_msg = "The sim_data parameter must be provided if simulated is True."
+            raise ValueError(err_msg)
         # correct types
         for modelname, data in self._sim_data.items():
             if not isinstance(modelname, str):
@@ -243,7 +263,12 @@ class Shift(AbstractModel):
 
         return True, SimValidation.CORRECT, None
 
-    def _call_simulated(self: Self, image: np.ndarray) -> tuple[tuple[int, int, int, int], float]:
+    def _call_simulated(
+        self: Self,
+        image: np.ndarray,
+        *,
+        preprocessed: bool | None = None,
+    ) -> tuple[tuple[int, int, int, int], float]:
         """
         Call the SHIFT methodology in a simulated environment.
 
@@ -251,13 +276,32 @@ class Shift(AbstractModel):
         ----------
         image : np.ndarray
             The most recent image.
+        preprocessed : bool, optional
+            Whether the input data is preprocessed, by default None.
+            If None, the input data will be preprocessed.
 
         Returns
         -------
         tuple[tuple[int, int, int, int], float]
             The bounding box, and the confidence score.
 
+        Raises
+        ------
+        ValueError
+            If the sim_data parameter is not provided when simulated is True.
+        TypeError
+            If the model loader is not a simulated model loader.
         """
+        if self._sim_data is None:
+            err_msg = "The sim_data parameter must be provided if simulated is True."
+            raise ValueError(err_msg)
+        if not isinstance(self._dml, SimulatedModelLoader):
+            err_msg = "The model loader is not a simulated model loader."
+            raise TypeError(err_msg)
+
+        if preprocessed is None:
+            preprocessed = False
+
         bbox, score = self._sim_data[self._last_model][self._sim_counter]
         model_runtime = self._model_loadtimes[self._last_model]
 
@@ -273,7 +317,12 @@ class Shift(AbstractModel):
         self._sim_counter += 1
         return bbox, score
 
-    def _call(self: Self, image: np.ndarray) -> tuple[tuple[int, int, int, int], float]:
+    def _call(
+        self: Self,
+        image: np.ndarray,
+        *,
+        preprocessed: bool | None = None,
+    ) -> tuple[tuple[int, int, int, int], float]:
         """
         Call the SHIFT methodology and perform the actual scheduling.
 
@@ -281,6 +330,9 @@ class Shift(AbstractModel):
         ----------
         image : np.ndarray
             The most recent image.
+        preprocessed : bool, optional
+            Whether the input data is preprocessed, by default None.
+            If None, the input data will be preprocessed.
 
         Returns
         -------
@@ -288,8 +340,19 @@ class Shift(AbstractModel):
             The bounding box, and the confidence score.
 
         """
+        if preprocessed is None:
+            preprocessed = False
+
+        if self._dml is None:
+            err_msg = "The model loader has not been intialized. Internal error."
+            raise RuntimeError(err_msg)
+
         model = self._dml.get_model(self._last_model)
-        tensor = model.preprocess(image)
+        if model is None:
+            err_msg = "The previous model used is not in memory. Internal error."
+            raise RuntimeError(err_msg)
+
+        tensor = model.preprocess(image) if not preprocessed else image
         bbox, score = model(tensor)
 
         new_model = self._scheduler(self._last_model, score, image, bbox)
@@ -298,9 +361,36 @@ class Shift(AbstractModel):
         if in_memory:
             self._last_model = new_model
 
-        return new_model, bbox, score
+        return bbox, score
 
-    def __call__(self: Self, image: np.ndarray) -> tuple[tuple[int, int, int, int], float]:
+    def predict(
+        self: Self,
+        image: np.ndarray,
+    ) -> tuple[tuple[int, int, int, int], float]:
+        """
+        Predict on the input data.
+
+        Parameters
+        ----------
+        image : np.ndarray
+            The input data.
+
+        Returns
+        -------
+        tuple[tuple[int, int, int, int], float]
+            The output data, a bounding box and a score.
+
+        """
+        if self._simulated:
+            return self._call_simulated(image, preprocessed=True)
+        return self._call(image, preprocessed=True)
+
+    def __call__(
+        self: Self,
+        image: np.ndarray,
+        *,
+        preprocessed: bool | None = None,
+    ) -> tuple[tuple[int, int, int, int], float]:
         """
         Call the SHIFT methodology.
 
@@ -308,6 +398,9 @@ class Shift(AbstractModel):
         ----------
         image : np.ndarray
             The most recent image.
+        preprocessed : bool, optional
+            Whether the input data is preprocessed, by default None.
+            If None, the input data will be preprocessed.
 
         Returns
         -------
@@ -316,5 +409,5 @@ class Shift(AbstractModel):
 
         """
         if self._simulated:
-            return self._call_simulated(image)
-        return self._call(image)
+            return self._call_simulated(image, preprocessed=preprocessed)
+        return self._call(image, preprocessed=preprocessed)

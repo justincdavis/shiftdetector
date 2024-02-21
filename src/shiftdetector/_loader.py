@@ -213,8 +213,14 @@ class _ModelLoaderThread:
         with self._condition:
             self._condition.notify_all()
 
+
 class _SimModel:
-    def __init__(self: Self, modelname: str, time_to_load: float, model_creation_func: Callable[[], AbstractModel] | None = None) -> None:
+    def __init__(
+        self: Self,
+        modelname: str,
+        time_to_load: float,
+        model_creation_func: Callable[[], AbstractModel] | None = None,
+    ) -> None:
         self._modelname = modelname
         self._model_creation_func = model_creation_func
         self._time_to_load = time_to_load
@@ -475,7 +481,11 @@ class SimulatedModelLoader(AbstractModelLoader):
         self._get_memory = get_memory
         self._model_load_times = model_load_times
         self._model_loaders: dict[str, _SimModel] = {
-            modelname: _SimModel(modelname, self._model_load_times[modelname], model_creation_func)
+            modelname: _SimModel(
+                modelname,
+                self._model_load_times[modelname],
+                model_creation_func,
+            )
             for modelname, model_creation_func, _ in model_data
         }
         self._model_costs: dict[str, float] = {
@@ -567,7 +577,9 @@ class SimulatedModelLoader(AbstractModelLoader):
 
             if wait:
                 # sim_propagate the time to load the model + 1
-                self._model_loaders[modelname].sim_propagate(self._model_load_times[modelname] + 1)
+                self._model_loaders[modelname].sim_propagate(
+                    self._model_load_times[modelname] + 1,
+                )
                 return True
         return False
 
@@ -595,4 +607,3 @@ class SimulatedModelLoader(AbstractModelLoader):
         """
         for model_loader in self._model_loaders.values():
             model_loader.sim_propagate(elapsed)
-

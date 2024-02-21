@@ -136,7 +136,8 @@ def _characterize(
         t_inference = t2 - t1
 
         bbox, score = outputs[0], outputs[1]
-        bbox = scale_coords(bbox, model.input_size, image.shape[:2])
+        height, width, _ = image.shape
+        bbox = scale_coords(bbox, model.input_size, (width, height))
         iou = bbox_iou(bbox, gt)
 
         image_stats[image_name]["preprocess"] = t_preprocess

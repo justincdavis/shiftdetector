@@ -234,6 +234,7 @@ class Shift(AbstractModel):
         ------
         ValueError
             If the simulated data is None.
+
         """
         if self._sim_data is None:
             err_msg = "The sim_data parameter must be provided if simulated is True."
@@ -291,6 +292,7 @@ class Shift(AbstractModel):
             If the sim_data parameter is not provided when simulated is True.
         TypeError
             If the model loader is not a simulated model loader.
+
         """
         if self._sim_data is None:
             err_msg = "The sim_data parameter must be provided if simulated is True."

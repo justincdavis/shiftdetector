@@ -136,7 +136,10 @@ def _characterize(
         t_inference = t2 - t1
 
         bbox, score = outputs[0], outputs[1]
-        height, width, _ = image.shape
+        try:
+            height, width, _ = image.shape  # type: ignore[misc]
+        except ValueError:
+            height, width = image.shape
         bbox = scale_coords(bbox, model.input_size, (width, height))
         iou = bbox_iou(bbox, gt)
 

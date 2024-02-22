@@ -38,6 +38,7 @@ dependencies = [
     "opencv-contrib-python>=4.8.0",
     "networkx>=3.0.0",
     "numpy>=1.21.0,<2.0.0",
+    "cv2ext>=0.0.2",
     "typing_extensions>=4.0.0",
     "setuptools>=57.0.0",
 ]
@@ -89,6 +90,9 @@ push            = false
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+shiftdetector = ["src/shiftdetector/py.typed"]
 
 [tool.ruff]
 fix = true

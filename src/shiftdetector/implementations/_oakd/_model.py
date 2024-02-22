@@ -107,6 +107,27 @@ class OakModel(AbstractModel):
         else:
             self._vpu.reconfigure(blob_path=self._modelpath)
 
+        if self._input_size is None:
+            err_msg = "The input size of the model is not known."
+            err_msg += " Please provide the input size."
+            raise ValueError(err_msg)
+
+    @property
+    def input_size(self: Self) -> tuple[int, int]:
+        """
+        Get the input size of the model.
+
+        Returns
+        -------
+        tuple[int, int]
+            The input size of the model.
+
+        """
+        if self._input_size is None:
+            err_msg = "The input size is None after initialization."
+            raise RuntimeError(err_msg)
+        return self._input_size
+
     @staticmethod
     def _frame_norm(
         frame: np.ndarray,
@@ -183,3 +204,49 @@ class OakModel(AbstractModel):
             (img_width, img_height),
         )
         return (int(x1), int(y1), int(x2), int(y2)), max_conf
+
+    def predict(
+        self: Self,
+        data: np.ndarray,
+    ) -> tuple[tuple[int, int, int, int], float]:
+        """
+        Predict the output data from the input data.
+
+        Parameters
+        ----------
+        data : np.ndarray
+            The input data.
+
+        Returns
+        -------
+        tuple[tuple[int, int, int, int], float]
+            The output data, a bounding box and a score.
+
+        """
+        return self._execute(data, preprocessed=True)
+
+    def __call__(
+        self: Self,
+        data: np.ndarray,
+        *,
+        preprocessed: bool | None = None,
+    ) -> tuple[tuple[int, int, int, int], float]:
+        """
+        Predict the output data from the input data.
+
+        Parameters
+        ----------
+        data : np.ndarray
+            The input data.
+        preprocessed : bool | None
+            Whether the input data is preprocessed.
+            If None, the input data will be assumed to be
+            preprocessed.
+
+        Returns
+        -------
+        tuple[tuple[int, int, int, int], float]
+            The output data, a bounding box and a score.
+
+        """
+        return self._execute(data, preprocessed=preprocessed)

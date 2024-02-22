@@ -31,6 +31,20 @@ except ImportError:
             raise ImportError(err_msg)
 
 
+try:
+    from . import _oakd as oakd
+except ImportError:
+
+    class oakd:  # type: ignore[no-redef]
+        """Mock class for Oak-D implementation."""
+
+        def __getattr__(self: Self, name: str) -> None:
+            """Error message for Oak-D."""
+            err_msg = "Oak-D implementation not available."
+            err_msg += " Please install oakd dependencies."
+            raise ImportError(err_msg)
+
+
 from . import _mock as mock
 
-__all__ = ["jetson", "mock"]
+__all__ = ["jetson", "mock", "oakd"]

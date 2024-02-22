@@ -1,18 +1,29 @@
-.. PROJECT documentation master file, created by
-   sphinx-quickstart on Sat Nov 18 23:52:20 2023.
-   You can adapt this file completely to your liking, but it should at least
-   contain the root `toctree` directive.
-
-Welcome to PROJECT's documentation!
+Welcome to shiftdetector's Documentation
 ===================================
 
+**shiftdetector** is an implementation of the paper:
+Context-aware Multi-Model Object Detection for Diversely Heterogeneous Compute Systems
+by:
+Justin Davis, Mehmet E. Belviranli
+https://arxiv.org/abs/2402.07415
+
+Check out the :doc:`usage` section for further information, including
+how to :ref:`installation` the project.
+
+Contents
+========
+
 .. toctree::
-   :maxdepth: 2
-   :caption: Contents:
+   :maxdepth: 1
 
+   Home <self>
+   Usage <usage>
+   Installation <installation>
+   Examples <examples>
+   API <api>
+   Changelog <changelog>
 
-
-Indices and tables
+Indices and Tables
 ==================
 
 * :ref:`genindex`

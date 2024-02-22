@@ -1,10 +1,10 @@
-PROJECT package
-===============
+shiftdetector.cli package
+=========================
 
 Module contents
 ---------------
 
-.. automodule:: PROJECT
+.. automodule:: shiftdetector.cli
    :members:
    :undoc-members:
    :show-inheritance:

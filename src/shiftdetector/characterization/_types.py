@@ -129,8 +129,8 @@ class AbstractModel(ABC):
     def __init__(self: Self) -> None:
         pass
 
-    @abstractmethod
     @property
+    @abstractmethod
     def input_size(self: Self) -> tuple[int, int]:
         """
         Get the input size of the model.

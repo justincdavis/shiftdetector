@@ -1,7 +1,7 @@
-PROJECT
-=======
+shiftdetector
+=============
 
 .. toctree::
    :maxdepth: 4
 
-   PROJECT
+   shiftdetector

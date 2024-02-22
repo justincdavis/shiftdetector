@@ -147,7 +147,7 @@ class YoloModel(AbstractModel):
         """
         if data.shape[0] != self.input_size[1] or data.shape[1] != self.input_size[0]:
             data = cv2.resize(data, self.input_size, cv2.INTER_LINEAR)  # type: ignore[call-overload]
-        data = self._letterbox(data)[0]
+        data = self._letterbox(data, self.input_size)[0]
         data = cv2.cvtColor(data, cv2.COLOR_BGR2RGB)
         data = data / 255.0  # type: ignore[operator]
         data = data[np.newaxis, :]

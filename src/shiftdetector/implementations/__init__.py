@@ -15,36 +15,17 @@
 """Module for implemenations on hardware."""
 from __future__ import annotations
 
-from typing_extensions import Self
+import contextlib
 
-try:
+with contextlib.suppress(ImportError):
     from . import _jetson as jetson
-except ImportError:
 
-    class jetson:  # type: ignore[no-redef]
-        """Mock class for Jetson implementation."""
-
-        def __getattr__(self: Self, name: str) -> None:
-            """Error message for Jetson."""
-            err_msg = "Jetson implementation not available."
-            err_msg += " Please install jetson dependencies."
-            raise ImportError(err_msg)
-
-
-try:
+with contextlib.suppress(ImportError):
     from . import _oakd as oakd
-except ImportError:
 
-    class oakd:  # type: ignore[no-redef]
-        """Mock class for Oak-D implementation."""
-
-        def __getattr__(self: Self, name: str) -> None:
-            """Error message for Oak-D."""
-            err_msg = "Oak-D implementation not available."
-            err_msg += " Please install oakd dependencies."
-            raise ImportError(err_msg)
-
+with contextlib.suppress(ImportError):
+    from . import _tensorrt as tensorrt
 
 from . import _mock as mock
 
-__all__ = ["jetson", "mock", "oakd"]
+__all__ = ["jetson", "mock", "oakd", "tensorrt"]

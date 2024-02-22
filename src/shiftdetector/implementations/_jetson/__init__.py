@@ -11,7 +11,19 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
-"""Module for implemenations on the NVIDIA Jetson series."""
+"""
+Module for implemenations on the NVIDIA Jetson series.
+
+Classes
+-------
+JetsonPowerMeasure
+    Class for measuring power on the NVIDIA Jetson series.
+
+Functions
+---------
+get_jetson_memory
+    Get the memory usage on the NVIDIA Jetson series.
+"""
 from __future__ import annotations
 
 from ._memory import get_jetson_memory

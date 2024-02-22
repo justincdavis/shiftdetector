@@ -11,26 +11,16 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
-# ruff: noqa: N801
-"""Module for implemenations on hardware."""
+"""
+Module for the Oak-D implementation of the model.
+
+Classes
+-------
+OakModel
+    Class for the Oak-D implementation of the model.
+"""
 from __future__ import annotations
 
-from typing_extensions import Self
+from ._model import OakModel
 
-try:
-    from . import _jetson as jetson
-except ImportError:
-
-    class jetson:  # type: ignore[no-redef]
-        """Mock class for Jetson implementation."""
-
-        def __getattr__(self: Self, name: str) -> None:
-            """Error message for Jetson."""
-            err_msg = "Jetson implementation not available."
-            err_msg += " Please install jetson dependencies."
-            raise ImportError(err_msg)
-
-
-from . import _mock as mock
-
-__all__ = ["jetson", "mock"]
+__all__ = ["OakModel"]

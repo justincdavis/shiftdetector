@@ -114,8 +114,9 @@ def _characterize(
         with Path.open(jsonpath, "w") as f:
             json.dump({"power_draw": energy}, f, ident=4)
     else:
-        jsonstr: str = str(jsonpath.resolve())
-        energy = float(json.load(jsonstr)["power_draw"])  # type: ignore[arg-type]
+        with Path.open(jsonpath, "r") as f:
+            jsondata = json.load(f)  # type: ignore[arg-type]
+            energy = float(jsondata["power_draw"])
 
     if not Path.exists(image_dir):
         err_msg = f"Image directory {image_dir} does not exist."

@@ -11,6 +11,19 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
+"""
+Module for mock implementations of hardware.
+
+Classes
+-------
+MockPowerMeasure
+    Class for measuring power on a mock device.
+
+Functions
+---------
+get_mock_memory
+    Get the memory usage on a mock device.
+"""
 from __future__ import annotations
 
 from ._memory import get_mock_memory

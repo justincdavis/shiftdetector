@@ -11,16 +11,17 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
-"""Run command line utilities for the shift detector package."""
+"""
+Run a model on a video file.
+
+Functions
+---------
+run_cli
+    Run the model on a video from the command line.
+"""
 from __future__ import annotations
 
-import argparse
+from ._run import run_cli
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Run the shift detector.")
-    parser.add_argument("--run", required=False, action="store_true", help="Run a model on a video.")
-    args = parser.parse_args()
-
-    if args.run:
-        from shiftdetector.cli import run_cli
-        run_cli()
+    run_cli()

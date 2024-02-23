@@ -39,6 +39,7 @@ dependencies = [
     "networkx>=3.0.0",
     "numpy>=1.21.0,<2.0.0",
     "cv2ext>=0.0.3",
+    "tqdm>=4.66.0",
     "typing_extensions>=4.0.0",
     "setuptools>=57.0.0",
 ]
@@ -55,6 +56,7 @@ ci = [
     "ruff>=0.2.2",
     "mypy>=1.8.0",
     "types-setuptools>=57.0.0",
+    "types-tqdm>=4.66.0",
 ]
 test = [
     "pytest>=6.2.0",
@@ -172,6 +174,7 @@ warn_return_any = true
 [[tool.mypy.overrides]]
 module = [
     'jtop',
+    'jetson-stats',
     'networkx',
 ]
 ignore_errors = true

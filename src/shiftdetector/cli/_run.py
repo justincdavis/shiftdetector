@@ -11,16 +11,19 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
+# ruff: noqa: PLC0415
 from __future__ import annotations
 
+import argparse
 import csv
 import json
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Callable, Iterable
 
 import numpy as np
 from cv2ext import IterableVideo
+from tqdm import tqdm
 
 if TYPE_CHECKING:
     from shiftdetector.characterization import AbstractMeasure, AbstractModel
@@ -34,6 +37,8 @@ def run(
     power_measure: AbstractMeasure | None = None,
     power_draw: float | None = None,
     characterization_dir: Path | None = None,
+    *,
+    progress_bar: bool | None = None,
 ) -> None:
     """
     Run a model on a video file.
@@ -62,6 +67,9 @@ def run(
         An optional directory to load the characterization data from.
         When specified and power_measure/power_draw are None,
         the power draw will be determined from the characterization data.
+    progress_bar : bool | None
+        An optional flag to display a progress bar.
+        If None, then no progress bar will be displayed.
 
     Raises
     ------
@@ -90,13 +98,19 @@ def run(
         with Path.open(jsonpath, "w") as f:
             data = json.load(f)
             power_draw = float(data["power_draw"])
+    if progress_bar is None:
+        progress_bar = False
 
     results: list[tuple[int, int, int, int, int, float, float, float, float, float]] = (
         []
     )
 
+    video: Iterable[tuple[int, np.ndarray]] = IterableVideo(videofile)
+    if progress_bar:
+        video = tqdm(video)
+
     model = modelfunc()
-    for frameid, frame in IterableVideo(videofile):
+    for frameid, frame in video:
         t0 = time.perf_counter()
         tensor = model.preprocess(frame)
         t1 = time.perf_counter()
@@ -142,3 +156,84 @@ def run(
             ],
         )
         writer.writerows(results)
+
+
+def _get_oakd_model(blobpath: str, input_size: tuple[int, int]) -> Callable[[], AbstractModel]:
+    from shiftdetector.implementations.oakd import (  # type: ignore[import-not-found]
+        OakModel,
+    )
+
+    def _model() -> AbstractModel:
+        return OakModel(blobpath, input_size=input_size)  # type: ignore[no-any-return]
+    return _model
+
+
+def _get_yolo_tensorrt_model(modelpath: str) -> Callable[[], AbstractModel]:
+    from shiftdetector.implementations.tensorrt import (  # type: ignore[import-not-found]
+        YoloModel,
+    )
+
+    def _model() -> AbstractModel:
+        return YoloModel(modelpath)  # type: ignore[no-any-return]
+    return _model
+
+
+def run_cli() -> None:
+    parser = argparse.ArgumentParser(description="Run a model on a video.")
+    parser.add_argument("--model", type=str, required=True, help="Path to the model.")
+    parser.add_argument("--name", type=str, required=False, help="Name of the model.")
+    parser.add_argument("--video", type=str, required=True, help="Path to the video.")
+    parser.add_argument("--output_dir", type=str, required=True, help="Path to the output directory.")
+    parser.add_argument("--input_size", type=str, required=False, help="Size of the model input. Should be of form: [124,124]")
+    parser.add_argument("--platform", type=str, required=False, help="Platform to run the model on.")
+    parser.add_argument("--powerdraw", type=float, required=False, help="Power draw of the model.")
+    parser.add_argument("--char_dir", type=str, required=False, help="Path to the characterization directory.")
+    args = parser.parse_args()
+
+    modelname = args.name if args.name else Path(args.model).stem
+
+    # parse input size
+    input_size = None
+    if args.input_size is not None:
+        input_size = tuple(map(int, args.input_size.strip("[]").split(",")))
+
+    # handle modelfunc
+    extension = Path(args.model).suffix
+    modelfunc = None
+    if extension == ".blob":
+        if input_size is None:
+            err_msg = "Input size must be provided for OAK-D models."
+            raise ValueError(err_msg)
+        modelfunc = _get_oakd_model(args.model, input_size)
+    elif extension == ".engine" or extension == ".trt":
+        if "yolo" in modelname.lower():
+            modelfunc = _get_yolo_tensorrt_model(args.model)
+        else:
+            err_msg = f"Do not have an implementation available for model {modelname},"
+            err_msg = " using TensorRT. Currently only YoloV7 is supported."
+            raise ValueError(err_msg)
+
+    # handle power_measure
+    power_measure = None
+    if args.platform is not None:
+        if args.platform == "jetson":
+            from shiftdetector.characterization import JetsonMeasure
+            power_measure = JetsonMeasure()
+        else:
+            err_msg = f"Do not have an implementation available for platform {args.platform}."
+            raise ValueError(err_msg)
+
+    if modelfunc is None:
+        err_msg = f"Do not have an implementation available for model {modelname}."
+        raise ValueError(err_msg)
+
+    run(
+        videofile=args.video,
+        output_dir=args.output_dir,
+        modelname=args.model,
+        modelfunc=modelfunc,
+        power_measure=power_measure,
+        power_draw=args.powerdraw,
+        characterization_dir=args.char_dir,
+        progress_bar=True,
+    )

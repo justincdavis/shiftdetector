@@ -85,4 +85,5 @@ if __name__ == "__main__":
         power_measure=power_measure,
         power_draw=args.powerdraw,
         characterization_dir=args.char_dir,
+        progress_bar=True,
     )

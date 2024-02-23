@@ -11,21 +11,16 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
-"""
-Module for command line interface functions.
-
-This module contains the functions for the command line interface.
-These functions when imported directly do not utilize the same
-style as the command line. Instead, you pass the argumnets as
-the objects themselves.
-
-Functions
----------
-run
-    Run a model on a video file.
-"""
+"""Run command line utilities for the shift detector package."""
 from __future__ import annotations
 
-from ._run import run, run_cli
+import argparse
 
-__all__ = ["run", "run_cli"]
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Run the shift detector.")
+    parser.add_argument("--run", required=False, action="store_true", help="Run a model on a video.")
+    args = parser.parse_args()
+
+    if args.run:
+        from shiftdetector.cli import run_cli
+        run_cli()

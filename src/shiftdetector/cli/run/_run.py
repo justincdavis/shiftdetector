@@ -11,7 +11,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
-# ruff: noqa: PLC0415
+# ruff: noqa: PLC0415, I001
 from __future__ import annotations
 
 import argparse
@@ -158,23 +158,24 @@ def run(
         writer.writerows(results)
 
 
-def _get_oakd_model(blobpath: str, input_size: tuple[int, int]) -> Callable[[], AbstractModel]:
-    from shiftdetector.implementations.oakd import (  # type: ignore[import-not-found]
-        OakModel,
-    )
+def _get_oakd_model(
+    blobpath: str,
+    input_size: tuple[int, int],
+) -> Callable[[], AbstractModel]:
+    import shiftdetector.implementations.oakd as oakd  # type: ignore[import-not-found]
 
     def _model() -> AbstractModel:
-        return OakModel(blobpath, input_size=input_size)  # type: ignore[no-any-return]
+        return oakd.OakModel(blobpath, input_size=input_size)  # type: ignore[no-any-return]
+
     return _model
 
 
 def _get_yolo_tensorrt_model(modelpath: str) -> Callable[[], AbstractModel]:
-    from shiftdetector.implementations.tensorrt import (  # type: ignore[import-not-found]
-        YoloModel,
-    )
+    import shiftdetector.implementations.tensorrt as trt  # type: ignore[import-not-found]
 
     def _model() -> AbstractModel:
-        return YoloModel(modelpath)  # type: ignore[no-any-return]
+        return trt.YoloModel(modelpath)  # type: ignore[no-any-return]
+
     return _model
 
 
@@ -183,11 +184,36 @@ def run_cli() -> None:
     parser.add_argument("--model", type=str, required=True, help="Path to the model.")
     parser.add_argument("--name", type=str, required=False, help="Name of the model.")
     parser.add_argument("--video", type=str, required=True, help="Path to the video.")
-    parser.add_argument("--output_dir", type=str, required=True, help="Path to the output directory.")
-    parser.add_argument("--input_size", type=str, required=False, help="Size of the model input. Should be of form: [124,124]")
-    parser.add_argument("--platform", type=str, required=False, help="Platform to run the model on.")
-    parser.add_argument("--powerdraw", type=float, required=False, help="Power draw of the model.")
-    parser.add_argument("--char_dir", type=str, required=False, help="Path to the characterization directory.")
+    parser.add_argument(
+        "--output_dir",
+        type=str,
+        required=True,
+        help="Path to the output directory.",
+    )
+    parser.add_argument(
+        "--input_size",
+        type=str,
+        required=False,
+        help="Size of the model input. Should be of form: [124,124]",
+    )
+    parser.add_argument(
+        "--platform",
+        type=str,
+        required=False,
+        help="Platform to run the model on.",
+    )
+    parser.add_argument(
+        "--powerdraw",
+        type=float,
+        required=False,
+        help="Power draw of the model.",
+    )
+    parser.add_argument(
+        "--char_dir",
+        type=str,
+        required=False,
+        help="Path to the characterization directory.",
+    )
     args = parser.parse_args()
 
     modelname = args.name if args.name else Path(args.model).stem
@@ -195,7 +221,8 @@ def run_cli() -> None:
     # parse input size
     input_size = None
     if args.input_size is not None:
-        input_size = tuple(map(int, args.input_size.strip("[]").split(",")))
+        width, height = tuple(map(int, args.input_size.strip("[]").split(",")))
+        input_size = (width, height)
 
     # handle modelfunc
     extension = Path(args.model).suffix
@@ -217,10 +244,13 @@ def run_cli() -> None:
     power_measure = None
     if args.platform is not None:
         if args.platform == "jetson":
-            from shiftdetector.characterization import JetsonMeasure
-            power_measure = JetsonMeasure()
+            import shiftdetector.implementations.jetson as jt  # type: ignore[import-not-found]
+
+            power_measure = jt.JetsonMeasure()
         else:
-            err_msg = f"Do not have an implementation available for platform {args.platform}."
+            err_msg = (
+                f"Do not have an implementation available for platform {args.platform}."
+            )
             raise ValueError(err_msg)
 
     if modelfunc is None:
